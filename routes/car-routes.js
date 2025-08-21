@@ -2,6 +2,10 @@
 const express = require("express");
 const router = express.Router();
 const carController = require("../controllers/car-controller");
+const { protect } = require("../controllers/auth-controller");
+
+// Protect all car routes
+router.use(protect);
 
 // List + basic CRUD// routes/carRoutes.js
 router.get("/cars", carController.getAllCarsList);

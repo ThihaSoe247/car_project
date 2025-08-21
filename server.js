@@ -5,6 +5,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const { cookie } = require("express-validator");
+const authRoutes = require("./routes/auth-routes");
 
 require("dotenv").config();
 
@@ -26,4 +27,5 @@ app.get("/", (req, res) => {
   return res.json({ hello: "World this is Car Showroom" });
 });
 
+app.use("/api/auth", authRoutes);
 app.use("/api", carRoutes);

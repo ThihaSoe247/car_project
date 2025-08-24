@@ -4,19 +4,26 @@ const router = express.Router();
 const carController = require("../controllers/car-controller");
 const { protect } = require("../controllers/auth-controller");
 const { validateCarCreation, validateCarSale, validateRepair } = require("../middleware/validation");
+const { canCreateCar, canEditCar, canMarkAsSold, canViewAllData } = require("../middleware/authorization");
 
 // Protect all car routes
 router.use(protect);
 
-// List + basic CRUD
+// Read operations - all authenticated users can view
 router.get("/cars", carController.getAllCarsList);
 router.get("/cars/available", carController.getAvailableCars);
 router.get("/cars/sold", carController.getSoldCarsList);
 router.get("/car/:id", carController.getCarById);
-router.post("/create-car", validateCarCreation, carController.createCar);
-router.put("/car/:id/sell", validateCarSale, carController.markAsSold);
-router.post("/cars/:carId/repairs", validateRepair, carController.addRepair);
-router.put("/car/:id/edit", carController.editCar);
-router.put("/car/:id/edit-sale", carController.editSaleInfo);
+
+// Create operations - require proper permissions
+router.post("/create-car", canCreateCar, validateCarCreation, carController.createCar);
+
+// Update operations - require proper permissions
+router.put("/car/:id/sell", canMarkAsSold, validateCarSale, carController.markAsSold);
+router.put("/car/:id/edit", canEditCar, carController.editCar);
+router.put("/car/:id/edit-sale", canEditCar, carController.editSaleInfo);
+
+// Repair operations - require proper permissions
+router.post("/cars/:carId/repairs", canEditCar, validateRepair, carController.addRepair);
 
 module.exports = router;

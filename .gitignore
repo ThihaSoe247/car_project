@@ -1,3 +1,7 @@
+README.md
+test-server.js
+Deployment.md
+
 # Environment variables
 .env
 .env.local

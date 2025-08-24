@@ -12,52 +12,139 @@ const repairSchema = new mongoose.Schema(
 const buyerSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    phone: { type: String }, // optional format validation if you want
-    email: { type: String }, // optional regex/email validator
+    phone: { 
+      type: String,
+      validate: {
+        validator: function(v) {
+          return !v || /^[\+]?[1-9][\d]{0,15}$/.test(v);
+        },
+        message: 'Please provide a valid phone number'
+      }
+    },
+    email: { 
+      type: String,
+      validate: {
+        validator: function(v) {
+          return !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+        },
+        message: 'Please provide a valid email address'
+      }
+    },
   },
   { _id: false }
 );
 
 const saleSchema = new mongoose.Schema(
   {
-    price: { type: Number, required: true, min: 0 }, // car price at sale
-    date: { type: Date, required: true }, // sold date
-    kiloAtSale: { type: Number, required: true, min: 0 }, // odometer at sale
+    price: { type: Number, required: true, min: 0 },
+    date: { type: Date, required: true },
+    kiloAtSale: { type: Number, required: true, min: 0 },
     buyer: { type: buyerSchema, required: true },
   },
   { _id: false }
 );
 
 const carSchema = new mongoose.Schema({
-  licenseNo: { type: String },
-  brand: { type: String, required: true },
-  year: { type: Number, required: true },
-  enginePower: { type: String },
-  gear: { type: String, enum: ["Manual", "Automatic"], required: true },
-  color: String,
-  images: [String],
-  kilo: { type: Number, required: true }, // current/last-known odometer
-  isAvailable: { type: Boolean, default: true },
+  licenseNo: { 
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
+  brand: { 
+    type: String, 
+    required: true,
+    trim: true,
+    maxlength: 50
+  },
+  year: { 
+    type: Number, 
+    required: true,
+    min: 1900,
+    max: new Date().getFullYear() + 1
+  },
+  enginePower: { 
+    type: String,
+    trim: true,
+    maxlength: 100
+  },
+  gear: { 
+    type: String, 
+    enum: ["Manual", "Automatic"], 
+    required: true 
+  },
+  color: { 
+    type: String,
+    trim: true,
+    maxlength: 50
+  },
+  images: [{ 
+    type: String,
+    validate: {
+      validator: function(v) {
+        return v.length <= 10; // Max 10 images
+      },
+      message: 'Cannot have more than 10 images'
+    }
+  }],
+  kilo: { 
+    type: Number, 
+    required: true,
+    min: 0
+  },
+  isAvailable: { 
+    type: Boolean, 
+    default: true 
+  },
   wheelDrive: {
     type: String,
     enum: ["FWD", "RWD", "4WD", "AWD"],
     required: true,
   },
-
-  purchaseDate: { type: Date, required: true },
-  purchasePrice: { type: Number, required: true, min: 0 },
-  priceToSell: { type: Number, required: true, min: 0 },
-
-  // Legacy single fields (kept for compatibility/queries)
-  resellPrice: { type: Number },
-  soldOutDate: { type: Date },
-
-  // New: grouped sale data (present only when sold)
-  sale: { type: saleSchema, default: null },
-
-  repairs: { type: [repairSchema], default: [] },
-  createdAt: { type: Date, default: Date.now },
+  purchaseDate: { 
+    type: Date, 
+    required: true 
+  },
+  purchasePrice: { 
+    type: Number, 
+    required: true, 
+    min: 0 
+  },
+  priceToSell: { 
+    type: Number, 
+    required: true, 
+    min: 0 
+  },
+  sale: { 
+    type: saleSchema, 
+    default: null 
+  },
+  repairs: { 
+    type: [repairSchema], 
+    default: [] 
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
+
+// Indexes for performance
+carSchema.index({ isAvailable: 1, createdAt: -1 });
+carSchema.index({ brand: 1 });
+carSchema.index({ year: 1 });
+carSchema.index({ 'sale.date': -1 });
+carSchema.index({ licenseNo: 1 });
+carSchema.index({ createdBy: 1 });
 
 // Virtuals
 carSchema.virtual("totalRepairCost").get(function () {
@@ -65,39 +152,40 @@ carSchema.virtual("totalRepairCost").get(function () {
 });
 
 carSchema.virtual("profit").get(function () {
-  const realized = this.sale?.price ?? this.resellPrice;
-  if (realized != null && this.purchasePrice != null) {
-    return realized - (this.purchasePrice + this.totalRepairCost);
+  if (this.sale?.price && this.purchasePrice) {
+    return this.sale.price - (this.purchasePrice + this.totalRepairCost);
   }
   return null;
 });
 
-// Consistency guardrails
-carSchema.pre("validate", function (next) {
-  const sold = !!this.sale;
-
-  // If sold ⇒ must be unavailable; if available ⇒ sale cleared
-  if (sold && this.isAvailable) this.isAvailable = false;
-  if (!sold && this.isAvailable === true) {
-    // ensure legacy sale fields aren’t leaking
-    this.resellPrice = null;
-    this.soldOutDate = null;
+carSchema.virtual("daysInInventory").get(function () {
+  if (this.isAvailable) {
+    return Math.floor((new Date() - this.createdAt) / (1000 * 60 * 60 * 24));
   }
+  return null;
+});
 
-  // Keep legacy fields in sync for older code/UI
-  if (sold) {
-    this.resellPrice = this.sale.price;
-    this.soldOutDate = this.sale.date;
+// Pre-save middleware for data consistency
+carSchema.pre("save", function (next) {
+  // Update isAvailable based on sale status
+  if (this.sale) {
+    this.isAvailable = false;
   }
-
+  
+  // Update updatedBy if not set
+  if (this.isModified() && !this.updatedBy) {
+    this.updatedBy = this.createdBy;
+  }
+  
   next();
 });
 
-// Convenience methods
-carSchema.methods.markAsSold = function ({ price, date, kiloAtSale, buyer }) {
+// Instance methods
+carSchema.methods.markAsSold = function ({ price, date, kiloAtSale, buyer, updatedBy }) {
   if (price == null || !date || kiloAtSale == null || !buyer?.name) {
     throw new Error("Selling requires price, date, kiloAtSale, and buyer.name");
   }
+  
   this.sale = {
     price: Number(price),
     date: new Date(date),
@@ -109,22 +197,19 @@ carSchema.methods.markAsSold = function ({ price, date, kiloAtSale, buyer }) {
     },
   };
   this.isAvailable = false;
+  this.updatedBy = updatedBy;
 
-  // Optionally update latest odometer to the sold one
-  if (this.kilo == null || this.kilo < Number(kiloAtSale)) {
+  // Update latest odometer if higher
+  if (this.kilo < Number(kiloAtSale)) {
     this.kilo = Number(kiloAtSale);
   }
 };
 
-carSchema.methods.relist = function () {
+carSchema.methods.relist = function (updatedBy) {
   this.sale = null;
-  this.resellPrice = null;
-  this.soldOutDate = null;
   this.isAvailable = true;
+  this.updatedBy = updatedBy;
 };
-
-carSchema.set("toJSON", { virtuals: true });
-carSchema.set("toObject", { virtuals: true });
 
 const Car = mongoose.model("Car", carSchema);
 module.exports = Car;

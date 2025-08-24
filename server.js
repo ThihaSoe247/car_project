@@ -8,6 +8,7 @@ require("dotenv").config();
 // Import routes
 const carRoutes = require("./routes/car-routes");
 const authRoutes = require("./routes/auth-routes");
+const userRoutes = require("./routes/user-routes");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -73,6 +74,7 @@ app.get("/", (req, res) => {
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api", carRoutes);
+app.use("/api", userRoutes); // User management routes (Moderators only)
 
 // 404 handler
 app.use("*", (req, res) => {

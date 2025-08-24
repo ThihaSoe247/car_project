@@ -21,6 +21,9 @@ const sanitizeId = (id) => {
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
+// Default user ID for Staff operations (when no authentication)
+const STAFF_USER_ID = new mongoose.Types.ObjectId('000000000000000000000000');
+
 const carController = {
   // Create car when it arrives to showroom
   createCar: async (req, res) => {
@@ -56,6 +59,9 @@ const carController = {
         }
       }
 
+      // Determine user ID - use authenticated user or default Staff user
+      const userId = req.user ? req.user.userId : STAFF_USER_ID;
+
       const newCar = new Car({
         brand,
         year: Number(year),
@@ -76,8 +82,8 @@ const carController = {
               cost: Number(r.cost),
             }))
           : [],
-        createdBy: req.user.userId,
-        updatedBy: req.user.userId
+        createdBy: userId,
+        updatedBy: userId
       });
 
       const savedCar = await newCar.save({ session });

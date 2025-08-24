@@ -36,6 +36,49 @@ const validateRegistration = [
   handleValidationErrors
 ];
 
+// User creation validation (for Moderators)
+const validateUserCreation = [
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long'),
+  body('role')
+    .optional()
+    .isIn(['Admin', 'Staff'])
+    .withMessage('Role must be either Admin or Staff'),
+  handleValidationErrors
+];
+
+// User update validation (for Moderators)
+const validateUserUpdate = [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('email')
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('role')
+    .optional()
+    .isIn(['Admin', 'Staff'])
+    .withMessage('Role must be either Admin or Staff'),
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean value'),
+  handleValidationErrors
+];
+
 // User login validation
 const validateLogin = [
   body('email')
@@ -118,6 +161,8 @@ const validateRepair = [
 
 module.exports = {
   validateRegistration,
+  validateUserCreation,
+  validateUserUpdate,
   validateLogin,
   validateCarCreation,
   validateCarSale,

@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 // Input sanitization for MongoDB queries
 const sanitizeId = (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new Error('Invalid user ID format');
+    throw new Error("Invalid user ID format");
   }
   return id;
 };
@@ -19,18 +19,18 @@ const userController = {
 
       // Build filter
       const filter = {};
-      
+
       if (req.query.role) {
         filter.role = req.query.role;
       }
-      
+
       if (req.query.isActive !== undefined) {
-        filter.isActive = req.query.isActive === 'true';
+        filter.isActive = req.query.isActive === "true";
       }
 
       const [users, total] = await Promise.all([
         User.find(filter)
-          .select('-password')
+          .select("-password")
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
@@ -45,14 +45,14 @@ const userController = {
           page,
           limit,
           total,
-          pages: Math.ceil(total / limit)
-        }
+          pages: Math.ceil(total / limit),
+        },
       });
     } catch (error) {
       console.error("Failed to fetch users:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: "Internal server error" 
+        message: "Internal server error",
       });
     }
   },
@@ -61,27 +61,25 @@ const userController = {
   getUserById: async (req, res) => {
     try {
       const userId = sanitizeId(req.params.id);
-      
-      const user = await User.findById(userId)
-        .select('-password')
-        .lean();
-        
+
+      const user = await User.findById(userId).select("-password").lean();
+
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: "User not found" 
+          message: "User not found",
         });
       }
-      
+
       return res.status(200).json({
         success: true,
-        data: user
+        data: user,
       });
     } catch (error) {
       console.error("Error fetching user:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: "Internal server error" 
+        message: "Internal server error",
       });
     }
   },
@@ -94,36 +92,36 @@ const userController = {
       // Check if user already exists
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          message: "User with this email already exists" 
+          message: "User with this email already exists",
         });
       }
 
       // Create Admin user
-      const adminUser = new User({ 
-        name, 
-        email, 
-        password, 
-        role: 'Admin',
-        createdBy: req.user.userId
+      const adminUser = new User({
+        name,
+        email,
+        password,
+        role: "Admin",
+        // createdBy: req.user.userId
       });
-      
+
       await adminUser.save();
-      
+
       // Remove password from response
       adminUser.password = undefined;
-      
+
       return res.status(201).json({
         success: true,
         message: "Admin user created successfully",
-        data: adminUser
+        data: adminUser,
       });
     } catch (error) {
       console.error("Error creating admin user:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: error.message || "Failed to create admin user" 
+        message: error.message || "Failed to create admin user",
       });
     }
   },
@@ -134,46 +132,46 @@ const userController = {
       const { name, email, password, role } = req.body;
 
       // Validate role - Moderators can only create Admin and Staff users
-      if (role === 'Moderator') {
-        return res.status(403).json({ 
+      if (role === "Moderator") {
+        return res.status(403).json({
           success: false,
-          message: "Moderators cannot create other Moderator accounts" 
+          message: "Moderators cannot create other Moderator accounts",
         });
       }
 
       // Check if user already exists
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          message: "User with this email already exists" 
+          message: "User with this email already exists",
         });
       }
 
       // Create user
-      const user = new User({ 
-        name, 
-        email, 
-        password, 
-        role: role || 'Staff',
-        createdBy: req.user.userId
+      const user = new User({
+        name,
+        email,
+        password,
+        role: role || "Staff",
+        // createdBy: req.user.userId
       });
-      
+
       await user.save();
-      
+
       // Remove password from response
       user.password = undefined;
-      
+
       return res.status(201).json({
         success: true,
         message: "User created successfully",
-        data: user
+        data: user,
       });
     } catch (error) {
       console.error("Error creating user:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: error.message || "Failed to create user" 
+        message: error.message || "Failed to create user",
       });
     }
   },
@@ -187,30 +185,30 @@ const userController = {
       // Check if user exists
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: "User not found" 
+          message: "User not found",
         });
       }
 
       // Prevent Moderators from updating other Moderators
-      if (user.role === 'Moderator' && req.user.userId !== userId) {
-        return res.status(403).json({ 
+      if (user.role === "Moderator" && req.user.userId !== userId) {
+        return res.status(403).json({
           success: false,
-          message: "Cannot modify other Moderator accounts" 
+          message: "Cannot modify other Moderator accounts",
         });
       }
 
       // Check if email is being changed and if it already exists
       if (email && email !== user.email) {
-        const existingUser = await User.findOne({ 
-          email, 
-          _id: { $ne: userId } 
+        const existingUser = await User.findOne({
+          email,
+          _id: { $ne: userId },
         });
         if (existingUser) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             success: false,
-            message: "Email already in use" 
+            message: "Email already in use",
           });
         }
       }
@@ -220,18 +218,18 @@ const userController = {
         userId,
         { name, email, role, isActive },
         { new: true, runValidators: true }
-      ).select('-password');
+      ).select("-password");
 
       return res.status(200).json({
         success: true,
         message: "User updated successfully",
-        data: updatedUser
+        data: updatedUser,
       });
     } catch (error) {
       console.error("Error updating user:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: error.message || "Failed to update user" 
+        message: error.message || "Failed to update user",
       });
     }
   },
@@ -244,17 +242,17 @@ const userController = {
       // Check if user exists
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: "User not found" 
+          message: "User not found",
         });
       }
 
       // Prevent Moderators from deactivating themselves
       if (req.user.userId === userId) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: "Cannot deactivate your own account" 
+          message: "Cannot deactivate your own account",
         });
       }
 
@@ -264,17 +262,19 @@ const userController = {
 
       return res.status(200).json({
         success: true,
-        message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
+        message: `User ${
+          user.isActive ? "activated" : "deactivated"
+        } successfully`,
         data: {
           id: user._id,
-          isActive: user.isActive
-        }
+          isActive: user.isActive,
+        },
       });
     } catch (error) {
       console.error("Error toggling user status:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: error.message || "Failed to update user status" 
+        message: error.message || "Failed to update user status",
       });
     }
   },
@@ -287,27 +287,30 @@ const userController = {
       // Check if user exists
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: "User not found" 
+          message: "User not found",
         });
       }
 
       // Prevent Moderators from deleting themselves
       if (req.user.userId === userId) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: "Cannot delete your own account" 
+          message: "Cannot delete your own account",
         });
       }
 
       // Prevent deleting the last Moderator
-      if (user.role === 'Moderator') {
-        const moderatorCount = await User.countDocuments({ role: 'Moderator', isActive: true });
+      if (user.role === "Moderator") {
+        const moderatorCount = await User.countDocuments({
+          role: "Moderator",
+          isActive: true,
+        });
         if (moderatorCount <= 1) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             success: false,
-            message: "Cannot delete the last active Moderator" 
+            message: "Cannot delete the last active Moderator",
           });
         }
       }
@@ -316,16 +319,16 @@ const userController = {
 
       return res.status(200).json({
         success: true,
-        message: "User deleted successfully"
+        message: "User deleted successfully",
       });
     } catch (error) {
       console.error("Error deleting user:", error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: error.message || "Failed to delete user" 
+        message: error.message || "Failed to delete user",
       });
     }
-  }
+  },
 };
 
 module.exports = userController;

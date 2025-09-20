@@ -2,16 +2,16 @@
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required' 
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
       });
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Insufficient permissions' 
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions",
       });
     }
 
@@ -22,16 +22,16 @@ const authorize = (...roles) => {
 // ===== MODERATOR PERMISSIONS (Account Management Only) =====
 const canManageAccounts = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (req.user.role !== 'Moderator') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Moderators can manage user accounts' 
+  if (req.user.role !== "Moderator") {
+    return res.status(403).json({
+      success: false,
+      message: "Only Moderators can manage user accounts",
     });
   }
   next();
@@ -39,16 +39,16 @@ const canManageAccounts = (req, res, next) => {
 
 const canCreateAdminAccount = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (req.user.role !== 'Moderator') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Moderators can create Admin accounts' 
+  if (req.user.role !== "Moderator") {
+    return res.status(403).json({
+      success: false,
+      message: "Only Moderators can create Admin accounts",
     });
   }
   next();
@@ -57,16 +57,16 @@ const canCreateAdminAccount = (req, res, next) => {
 // ===== ADMIN PERMISSIONS (Full System Access Except Account Management) =====
 const canManageSystem = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (req.user.role !== 'Admin') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Admins can perform this operation' 
+  if (req.user.role !== "Admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Only Admins can perform this operation",
     });
   }
   next();
@@ -74,33 +74,32 @@ const canManageSystem = (req, res, next) => {
 
 const canCreateCar = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (!['Admin'].includes(req.user.role)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Admins can create cars' 
+  if (!["Admin"].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Admins can create cars",
     });
   }
   next();
 };
-
 const canEditCar = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (!['Admin'].includes(req.user.role)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Admins can edit cars' 
+  if (!["Admin"].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Admins can edit cars",
     });
   }
   next();
@@ -108,16 +107,16 @@ const canEditCar = (req, res, next) => {
 
 const canMarkAsSold = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (!['Admin'].includes(req.user.role)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Admins can mark cars as sold' 
+  if (!["Admin"].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Admins can mark cars as sold",
     });
   }
   next();
@@ -125,16 +124,16 @@ const canMarkAsSold = (req, res, next) => {
 
 const canViewAllData = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
     });
   }
 
-  if (!['Admin'].includes(req.user.role)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Only Admins can view all data' 
+  if (!["Admin"].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Admins can view all data",
     });
   }
   next();
@@ -172,5 +171,5 @@ module.exports = {
   canViewCars,
   canAddCarInfo,
   // Public access
-  publicAccess
+  publicAccess,
 };

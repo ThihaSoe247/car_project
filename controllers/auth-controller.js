@@ -3,56 +3,54 @@ const jwt = require("jsonwebtoken");
 
 // Create JWT token
 const createToken = (userId, role) => {
-  return jwt.sign(
-    { userId, role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
-  );
+  return jwt.sign({ userId, role }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  });
 };
 
 // Send token response
 const sendTokenResponse = (user, statusCode, res) => {
   const token = createToken(user._id, user.role);
-  
+
   // Remove password from output
   user.password = undefined;
-  
+
   res.status(statusCode).json({
     success: true,
     token,
-    data: user
+    data: user,
   });
 };
 
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    
+
     // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "User with this email already exists" 
+        message: "User with this email already exists",
       });
     }
 
     // Create user
-    const user = new User({ 
-      name, 
-      email, 
-      password, 
-      role: role || 'Staff' // Default to Staff if not specified
+    const user = new User({
+      name,
+      email,
+      password,
+      role: role || "Staff", // Default to Staff if not specified
     });
-    
+
     await user.save();
-    
+
     sendTokenResponse(user, 201, res);
   } catch (err) {
-    console.error('Registration error:', err);
-    res.status(500).json({ 
+    console.error("Registration error:", err);
+    res.status(500).json({
       success: false,
-      message: err.message || 'Registration failed' 
+      message: err.message || "Registration failed",
     });
   }
 };
@@ -63,39 +61,42 @@ exports.login = async (req, res) => {
 
     // Check if email and password exist
     if (!email || !password) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Please provide email and password" 
+        message: "Please provide email and password",
       });
     }
 
     // Check if user exists and password is correct
     const user = await User.findByEmail(email);
     if (!user || !(await user.correctPassword(password, user.password))) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "Invalid email or password" 
+        message: "Invalid email or password",
       });
     }
 
     // Check if user is active
     if (!user.isActive) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "Account is deactivated. Please contact administrator." 
+        message: "Account is deactivated. Please contact administrator.",
       });
     }
 
     // Update last login
     user.lastLogin = new Date();
+    const token = createToken(user._id, user.role);
+    console.log("JWT:", token);
+    console.log("Decoded:", jwt.decode(token));
     await user.save();
 
     sendTokenResponse(user, 200, res);
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ 
+    console.error("Login error:", err);
+    res.status(500).json({
       success: false,
-      message: err.message || 'Login failed' 
+      message: err.message || "Login failed",
     });
   }
 };
@@ -103,7 +104,7 @@ exports.login = async (req, res) => {
 exports.protect = async (req, res, next) => {
   try {
     let token;
-    
+
     // Get token from header
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -111,37 +112,42 @@ exports.protect = async (req, res, next) => {
     }
 
     if (!token) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "You are not logged in. Please log in to get access." 
+        message: "You are not logged in. Please log in to get access.",
       });
     }
 
+    // 👇 Add these debug lines
+    console.log("🔑 Incoming Token:", token);
+    console.log("🔎 Decoded (no verify):", jwt.decode(token));
+    console.log("🕒 Now:", Math.floor(Date.now() / 1000));
+
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
+    console.log("✅ Verified token:", decoded);
     // Check if user still exists
     const currentUser = await User.findById(decoded.userId);
     if (!currentUser) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "The user belonging to this token no longer exists." 
+        message: "The user belonging to this token no longer exists.",
       });
     }
 
     // Check if user changed password after token was issued
     if (currentUser.changedPasswordAfter(decoded.iat)) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "User recently changed password. Please log in again." 
+        message: "User recently changed password. Please log in again.",
       });
     }
 
     // Check if user is active
     if (!currentUser.isActive) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "Account is deactivated. Please contact administrator." 
+        message: "Account is deactivated. Please contact administrator.",
       });
     }
 
@@ -149,27 +155,27 @@ exports.protect = async (req, res, next) => {
     req.user = {
       userId: currentUser._id,
       role: currentUser.role,
-      email: currentUser.email
+      email: currentUser.email,
     };
-    
+
     next();
   } catch (err) {
-    console.error('Authentication error:', err);
-    if (err.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
+    console.error("Authentication error:", err);
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({
         success: false,
-        message: "Invalid token. Please log in again." 
+        message: "Invalid token. Please log in again.",
       });
     }
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({
         success: false,
-        message: "Token expired. Please log in again." 
+        message: "Token expired. Please log in again.",
       });
     }
-    return res.status(401).json({ 
+    return res.status(401).json({
       success: false,
-      message: "Authentication failed" 
+      message: "Authentication failed",
     });
   }
 };
@@ -179,21 +185,21 @@ exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "User not found" 
+        message: "User not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
   } catch (err) {
-    console.error('Get profile error:', err);
-    res.status(500).json({ 
+    console.error("Get profile error:", err);
+    res.status(500).json({
       success: false,
-      message: err.message || 'Failed to get profile' 
+      message: err.message || "Failed to get profile",
     });
   }
 };
@@ -202,17 +208,17 @@ exports.getMe = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { name, email } = req.body;
-    
+
     // Check if email is being changed and if it already exists
     if (email) {
-      const existingUser = await User.findOne({ 
-        email, 
-        _id: { $ne: req.user.userId } 
+      const existingUser = await User.findOne({
+        email,
+        _id: { $ne: req.user.userId },
       });
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          message: "Email already in use" 
+          message: "Email already in use",
         });
       }
     }
@@ -225,13 +231,13 @@ exports.updateProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
   } catch (err) {
-    console.error('Update profile error:', err);
-    res.status(500).json({ 
+    console.error("Update profile error:", err);
+    res.status(500).json({
       success: false,
-      message: err.message || 'Failed to update profile' 
+      message: err.message || "Failed to update profile",
     });
   }
 };

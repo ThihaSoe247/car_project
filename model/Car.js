@@ -34,6 +34,11 @@ const buyerSchema = new mongoose.Schema(
         message: "Please provide a valid email address",
       },
     },
+    passport: {
+      type: String,
+      required: [true, "Passport is required"],
+      trim: true,
+    },
   },
   { _id: false }
 );
@@ -77,6 +82,7 @@ const carSchema = new mongoose.Schema(
       trim: true,
       maxlength: 50,
     },
+
     year: {
       type: Number,
       required: true,
@@ -98,17 +104,15 @@ const carSchema = new mongoose.Schema(
       trim: true,
       maxlength: 50,
     },
-    images: [
-      {
-        type: String,
-        validate: {
-          validator: function () {
-            return this.images.length <= 10; // Max 10 images
-          },
-          message: "Cannot have more than 10 images",
+    images: {
+      type: [String],
+      validate: {
+        validator: function (arr) {
+          return arr.length <= 20;
         },
+        message: "Cannot have more than 20 images",
       },
-    ],
+    },
     kilo: {
       type: Number,
       required: true,
@@ -165,16 +169,6 @@ const carSchema = new mongoose.Schema(
       type: [repairSchema],
       default: [],
     },
-
-    // createdBy: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "User",
-    //   required: true,
-    // },
-    // updatedBy: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "User",
-    // },
   },
   {
     timestamps: true,
@@ -199,11 +193,22 @@ carSchema.index({ licenseNo: 1 });
 carSchema.virtual("totalRepairCost").get(function () {
   return (this.repairs || []).reduce((sum, r) => sum + (r.cost || 0), 0);
 });
-
 carSchema.virtual("profit").get(function () {
-  if (this.sale?.price && this.purchasePrice) {
-    return this.sale.price - (this.purchasePrice + this.totalRepairCost);
+  const totalRepairs = this.totalRepairCost || 0;
+
+  // Case 1: Paid sale
+  if (this.sale?.price && this.purchasePrice != null) {
+    return this.sale.price - (this.purchasePrice + totalRepairs);
   }
+
+  // Case 2: Installment sale
+  if (this.installment && this.purchasePrice != null) {
+    const totalInstallment =
+      (this.installment.downPayment || 0) +
+      (this.installment.remainingAmount || 0);
+    return totalInstallment - (this.purchasePrice + totalRepairs);
+  }
+
   return null;
 });
 
@@ -276,7 +281,7 @@ carSchema.methods.markAsPaid = function ({
   this.installment = null;
   this.boughtType = "Paid";
   this.isAvailable = false;
-  this.updatedBy = updatedBy;
+  // this.updatedBy = updatedBy;
 
   if (this.kilo < Number(kiloAtSale)) {
     this.kilo = Number(kiloAtSale);
@@ -289,7 +294,7 @@ carSchema.methods.markAsInstallment = function ({
   months,
   buyer,
   startDate,
-  updatedBy,
+  // updatedBy,
 }) {
   if (
     downPayment == null ||

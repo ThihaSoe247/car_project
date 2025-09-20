@@ -147,6 +147,11 @@ const validateCarSale = [
     .isEmail()
     .normalizeEmail()
     .withMessage("Please provide a valid buyer email"),
+  body("sale.buyer.passport")
+    .if(body("boughtType").equals("Paid"))
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Buyer passport is required and must be 5-20 characters"),
 
   // Installment sale validation
   body("installment.downPayment")
@@ -172,6 +177,11 @@ const validateCarSale = [
     .isEmail()
     .normalizeEmail()
     .withMessage("Please provide a valid buyer email"),
+  body("installment.buyer.passport")
+    .if(body("boughtType").equals("Installment"))
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Buyer passport is required and must be 5–20 characters"),
 
   handleValidationErrors,
 ];

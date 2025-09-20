@@ -1,6 +1,7 @@
 // controllers/car-controller.js
 const Car = require("../model/Car");
 const mongoose = require("mongoose");
+const cloudinary = require("cloudinary");
 
 // Safe date parser
 const toDate = (v) => {
@@ -25,84 +26,63 @@ const DEFAULT_LIMIT = 20;
 const STAFF_USER_ID = new mongoose.Types.ObjectId("000000000000000000000000");
 
 const carController = {
-  // Create car when it arrives to showroom
   createCar: async (req, res) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
       const {
+        licenseNo,
         brand,
         year,
-        enginePower,
         gear,
         color,
-        images,
-        kilo,
-        wheelDrive,
-        purchaseDate,
+        enginePower,
         purchasePrice,
         priceToSell,
-        licenseNo,
-        repairs,
+        purchaseDate,
+        kilo,
+        wheelDrive,
       } = req.body;
 
-      // Check if license number already exists
-      if (licenseNo) {
-        const existingCar = await Car.findOne({ licenseNo }).session(session);
-        if (existingCar) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "Car with this license number already exists",
-          });
-        }
-      }
-
-      // Determine user ID - use authenticated user or default Staff user
-      const userId = req.user ? req.user.userId : STAFF_USER_ID;
-
+      // Step 1: Create car without images
       const newCar = new Car({
+        licenseNo,
         brand,
-        year: Number(year),
-        enginePower,
+        year: parseInt(year),
         gear,
         color,
-        images: Array.isArray(images) ? images : [],
-        kilo: Number(kilo),
+        enginePower,
+        purchasePrice: parseFloat(purchasePrice),
+        priceToSell: parseFloat(priceToSell),
+        purchaseDate: new Date(purchaseDate),
+        kilo: parseFloat(kilo),
         wheelDrive,
-        purchaseDate: toDate(purchaseDate),
-        purchasePrice: Number(purchasePrice),
-        priceToSell: Number(priceToSell),
-        licenseNo,
-        repairs: Array.isArray(repairs)
-          ? repairs.map((r) => ({
-              description: r.description,
-              repairDate: toDate(r.repairDate) || new Date(),
-              cost: Number(r.cost),
-            }))
-          : [],
-        // createdBy: userId,
-        // updatedBy: userId,
+        images: [],
       });
 
-      const savedCar = await newCar.save({ session });
-      await session.commitTransaction();
+      await newCar.save(); // now we have _id
 
-      return res.status(201).json({
-        success: true,
-        message: "Car added successfully",
-        car: savedCar.toObject({ virtuals: true }),
-      });
-    } catch (error) {
-      await session.abortTransaction();
-      console.error("Error adding car:", error);
-      return res.status(400).json({
-        success: false,
-        message: error.message || "Failed to add car",
-      });
-    } finally {
-      session.endSession();
+      // Step 2: Upload images to unique folder
+      let imageUrls = [];
+      if (req.files && req.files.length > 0) {
+        const uploadedImages = await Promise.all(
+          req.files.map((file) =>
+            cloudinary.uploader.upload(file.path, {
+              folder: `car-showroom/${newCar._id}`, // ✅ per-car folder
+              use_filename: true,
+              unique_filename: true,
+            })
+          )
+        );
+        imageUrls = uploadedImages.map((img) => img.secure_url);
+      }
+
+      // Step 3: Update car with images
+      newCar.images = imageUrls;
+      await newCar.save();
+
+      res.status(201).json({ success: true, data: newCar });
+    } catch (err) {
+      console.error("Error creating car:", err);
+      res.status(500).json({ success: false, error: "Failed to create car" });
     }
   },
 
@@ -203,58 +183,6 @@ const carController = {
       });
     }
   },
-
-  // Get sold cars with pagination and date filtering
-  // getSoldCarsList: async (req, res) => {
-  //   try {
-  //     const page = Math.max(parseInt(req.query.page) || 1, 1);
-  //     const limit = Math.min(parseInt(req.query.limit) || DEFAULT_LIMIT, MAX_LIMIT);
-  //     const skip = (page - 1) * limit;
-
-  //     const filter = { isAvailable: false };
-
-  //     // Date range filtering
-  //     if (req.query.from || req.query.to) {
-  //       filter["sale.date"] = {};
-  //       if (req.query.from) {
-  //         const fromDate = toDate(req.query.from);
-  //         if (fromDate) filter["sale.date"].$gte = fromDate;
-  //       }
-  //       if (req.query.to) {
-  //         const toDate = toDate(req.query.to);
-  //         if (toDate) filter["sale.date"].$lte = toDate;
-  //       }
-  //     }
-
-  //     const [cars, total] = await Promise.all([
-  //       Car.find(filter)
-  //         .sort({ "sale.date": -1, createdAt: -1 })
-  //         .skip(skip)
-  //         .limit(limit)
-  //         .populate('createdBy', 'name email')
-  //         .populate('updatedBy', 'name email')
-  //         .lean({ virtuals: true }),
-  //       Car.countDocuments(filter),
-  //     ]);
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       data: cars,
-  //       pagination: {
-  //         page,
-  //         limit,
-  //         total,
-  //         pages: Math.ceil(total / limit)
-  //       }
-  //     });
-  //   } catch (error) {
-  //     console.error("Failed to fetch sold cars list:", error);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Internal server error"
-  //     });
-  //   }
-  // },
   getSoldCarsList: async (req, res) => {
     try {
       const page = Math.max(parseInt(req.query.page) || 1, 1);
@@ -335,72 +263,28 @@ const carController = {
       });
     }
   },
+  // DELETE a car by ID (Admin only)
+  deleteCar: async (req, res, next) => {
+    try {
+      const car = await Car.findById(req.params.id);
 
-  // Mark car as sold with transaction
-  // markAsSold: async (req, res) => {
-  //   const session = await mongoose.startSession();
-  //   session.startTransaction();
+      if (!car) {
+        return res.status(404).json({
+          success: false,
+          error: "Car not found",
+        });
+      }
 
-  //   try {
-  //     const carId = sanitizeId(req.params.id);
-  //     const { price, soldDate, kiloAtSale, buyer } = req.body;
+      await car.deleteOne();
 
-  //     if (!price || !soldDate || kiloAtSale == null || !buyer?.name) {
-  //       await session.abortTransaction();
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Required: price, soldDate, kiloAtSale, buyer.name",
-  //       });
-  //     }
-
-  //     const car = await Car.findById(carId).session(session);
-  //     if (!car) {
-  //       await session.abortTransaction();
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Car not found",
-  //       });
-  //     }
-
-  //     if (!car.isAvailable) {
-  //       await session.abortTransaction();
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Car is already marked as sold",
-  //       });
-  //     }
-
-  //     car.markAsSold({
-  //       price: Number(price),
-  //       date: toDate(soldDate),
-  //       kiloAtSale: Number(kiloAtSale),
-  //       buyer: {
-  //         name: buyer.name,
-  //         phone: buyer.phone,
-  //         email: buyer.email,
-  //       },
-  //       updatedBy: req.user.userId,
-  //     });
-
-  //     const updated = await car.save({ session });
-  //     await session.commitTransaction();
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: "Car marked as sold",
-  //       car: updated.toObject({ virtuals: true }),
-  //     });
-  //   } catch (error) {
-  //     await session.abortTransaction();
-  //     console.error("Error marking car as sold:", error);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: error.message || "Failed to update car",
-  //     });
-  //   } finally {
-  //     session.endSession();
-  //   }
-  // },
+      res.status(200).json({
+        success: true,
+        message: "Car deleted successfully",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
   markAsSold: async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -434,9 +318,11 @@ const carController = {
         });
       }
 
-      // Branch by boughtType
+      let finalSalePrice = 0;
+
+      // === Paid ===
       if (boughtType === "Paid") {
-        const { sale } = req.body; // <-- destructure sale
+        const { sale } = req.body;
         if (
           !sale ||
           !sale.price ||
@@ -459,6 +345,10 @@ const carController = {
           buyer: sale.buyer,
           updatedBy: req.user.userId,
         });
+
+        finalSalePrice = Number(sale.price);
+
+        // === Installment ===
       } else if (boughtType === "Installment") {
         const { installment } = req.body;
         if (
@@ -486,7 +376,19 @@ const carController = {
             : new Date(),
           updatedBy: req.user.userId,
         });
+
+        // Total price = downPayment + remaining
+        finalSalePrice =
+          Number(installment.downPayment) + Number(installment.remainingAmount);
       }
+
+      // === Calculate profit ===
+      const totalRepairCost = (car.repairs || []).reduce(
+        (sum, r) => sum + (r.cost || 0),
+        0
+      );
+      car.profit = finalSalePrice - (car.purchasePrice + totalRepairCost);
+      car.totalRepairCost = totalRepairCost;
 
       const updated = await car.save({ session });
       await session.commitTransaction();
@@ -507,6 +409,113 @@ const carController = {
       session.endSession();
     }
   },
+
+  // markAsSold: async (req, res) => {
+  //   const session = await mongoose.startSession();
+  //   session.startTransaction();
+
+  //   try {
+  //     const carId = sanitizeId(req.params.id);
+  //     const { boughtType } = req.body;
+
+  //     if (!boughtType || !["Paid", "Installment"].includes(boughtType)) {
+  //       await session.abortTransaction();
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "boughtType must be either 'Paid' or 'Installment'",
+  //       });
+  //     }
+
+  //     const car = await Car.findById(carId).session(session);
+  //     if (!car) {
+  //       await session.abortTransaction();
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Car not found",
+  //       });
+  //     }
+
+  //     if (!car.isAvailable) {
+  //       await session.abortTransaction();
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Car is already marked as sold",
+  //       });
+  //     }
+
+  //     // Branch by boughtType
+  //     if (boughtType === "Paid") {
+  //       const { sale } = req.body; // <-- destructure sale
+  //       if (
+  //         !sale ||
+  //         !sale.price ||
+  //         !sale.soldDate ||
+  //         !sale.kiloAtSale ||
+  //         !sale.buyer?.name
+  //       ) {
+  //         await session.abortTransaction();
+  //         return res.status(400).json({
+  //           success: false,
+  //           message:
+  //             "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name",
+  //         });
+  //       }
+
+  //       car.markAsPaid({
+  //         price: Number(sale.price),
+  //         date: toDate(sale.soldDate),
+  //         kiloAtSale: Number(sale.kiloAtSale),
+  //         buyer: sale.buyer,
+  //         updatedBy: req.user.userId,
+  //       });
+  //     } else if (boughtType === "Installment") {
+  //       const { installment } = req.body;
+  //       if (
+  //         !installment ||
+  //         !installment.downPayment ||
+  //         !installment.remainingAmount ||
+  //         !installment.months ||
+  //         !installment.buyer?.name
+  //       ) {
+  //         await session.abortTransaction();
+  //         return res.status(400).json({
+  //           success: false,
+  //           message:
+  //             "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name",
+  //         });
+  //       }
+
+  //       car.markAsInstallment({
+  //         downPayment: Number(installment.downPayment),
+  //         remainingAmount: Number(installment.remainingAmount),
+  //         months: Number(installment.months),
+  //         buyer: installment.buyer,
+  //         startDate: installment.startDate
+  //           ? toDate(installment.startDate)
+  //           : new Date(),
+  //         updatedBy: req.user.userId,
+  //       });
+  //     }
+
+  //     const updated = await car.save({ session });
+  //     await session.commitTransaction();
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: `Car marked as sold via ${boughtType}`,
+  //       car: updated.toObject({ virtuals: true }),
+  //     });
+  //   } catch (error) {
+  //     await session.abortTransaction();
+  //     console.error("Error marking car as sold:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: error.message || "Failed to update car",
+  //     });
+  //   } finally {
+  //     session.endSession();
+  //   }
+  // },
 
   // Get single car by ID
   getCarById: async (req, res) => {
@@ -675,6 +684,23 @@ const carController = {
       });
     } finally {
       session.endSession();
+    }
+  },
+  // Get sold cars by installment
+  getSoldCarsByInstallment: async (req, res, next) => {
+    try {
+      const cars = await Car.find({
+        isAvailable: false,
+        boughtType: "Installment",
+      });
+
+      res.status(200).json({
+        success: true,
+        count: cars.length,
+        data: cars,
+      });
+    } catch (err) {
+      next(err);
     }
   },
 

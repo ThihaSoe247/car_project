@@ -1,13 +1,14 @@
-// routes/car-routes.js
 const express = require("express");
 const router = express.Router();
 const carController = require("../controllers/car-controller");
 const multer = require("multer");
-const { storage } = require("../cloud/cloudinary");
+const { canViewProfit } = require("../middleware/authorization");
 
 // ✅ Import protect from auth-controller
 const { protect } = require("../controllers/auth-controller");
 
+// ✅ Import Cloudinary storage instead of memoryStorage
+const { storage } = require("../cloud/cloudinary");
 const upload = multer({ storage });
 
 const {
@@ -26,34 +27,35 @@ const {
   publicAccess,
 } = require("../middleware/authorization");
 
-// ===== PUBLIC/STAFF ACCESS (No Authentication Required) =====
+// ===== PUBLIC/STAFF ACCESS =====
 router.get("/cars", canViewCars, carController.getAllCarsList);
 router.get("/cars/available", canViewCars, carController.getAvailableCars);
 router.get("/cars/sold", canViewCars, carController.getSoldCarsList);
 router.get("/car/:id", canViewCars, carController.getCarById);
 
-// ===== STAFF ACCESS (No Auth Required to Add Basic Car Info) =====
+// ===== STAFF ACCESS =====
 router.post(
   "/create-car",
   canAddCarInfo,
-  upload.array("images", 20), // multer handles up to 20 files
+  upload.array("images", 10), // ✅ goes directly to Cloudinary
   validateCarCreation,
   carController.createCar
 );
 
-// ===== ADMIN ONLY ACCESS (Authentication + Role Check Required) =====
+// ===== ADMIN ONLY ACCESS =====
 router.put(
   "/car/:id/sell",
-  protect, // 🔑 verify JWT & attach req.user
-  canMarkAsSold, // 🔑 check Admin role
+  protect,
+  canMarkAsSold,
   validateCarSale,
   carController.markAsSold
 );
 
 router.put(
   "/car/:id/edit",
-  protect, // 🔑 must login
-  canEditCar, // 🔑 must be Admin
+  protect,
+  canEditCar,
+  upload.array("images", 10), // ✅ goes directly to Cloudinary
   carController.editCar
 );
 
@@ -78,6 +80,13 @@ router.get(
   "/cars/sold/installment",
   canViewCars,
   carController.getSoldCarsByInstallment
+);
+
+router.get(
+  "/analysis/profit",
+  protect,
+  canViewProfit, // ✅ Admin + Moderator only
+  carController.getProfitAnalysis
 );
 
 module.exports = router;

@@ -1,8 +1,20 @@
 // controllers/car-controller.js
 const Car = require("../model/Car");
 const mongoose = require("mongoose");
-const cloudinary = require("cloudinary");
-
+const fs = require("fs");
+const { cloudinary } = require("../cloud/cloudinary");
+const streamUpload = (fileBuffer, folder) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, use_filename: true, unique_filename: true },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    stream.end(fileBuffer); // send buffer to Cloudinary
+  });
+};
 // Safe date parser
 const toDate = (v) => {
   if (!v) return v;
@@ -58,31 +70,32 @@ const carController = {
         images: [],
       });
 
-      await newCar.save(); // now we have _id
+      await newCar.save();
 
-      // Step 2: Upload images to unique folder
-      let imageUrls = [];
+      let imageObjs = [];
+
+      // Step 2: If images are uploaded
       if (req.files && req.files.length > 0) {
         const uploadedImages = await Promise.all(
           req.files.map((file) =>
-            cloudinary.uploader.upload(file.path, {
-              folder: `car-showroom/${newCar._id}`, // ✅ per-car folder
-              use_filename: true,
-              unique_filename: true,
-            })
+            streamUpload(file.buffer, `car-showroom/${newCar._id}`)
           )
         );
-        imageUrls = uploadedImages.map((img) => img.secure_url);
+
+        imageObjs = uploadedImages.map((img) => ({
+          url: img.secure_url,
+          public_id: img.public_id,
+        }));
       }
 
-      // Step 3: Update car with images
-      newCar.images = imageUrls;
+      // Step 3: Save images back to car
+      newCar.images = imageObjs;
       await newCar.save();
 
       res.status(201).json({ success: true, data: newCar });
     } catch (err) {
       console.error("Error creating car:", err);
-      res.status(500).json({ success: false, error: "Failed to create car" });
+      res.status(500).json({ success: false, error: err.message });
     }
   },
 
@@ -410,113 +423,6 @@ const carController = {
     }
   },
 
-  // markAsSold: async (req, res) => {
-  //   const session = await mongoose.startSession();
-  //   session.startTransaction();
-
-  //   try {
-  //     const carId = sanitizeId(req.params.id);
-  //     const { boughtType } = req.body;
-
-  //     if (!boughtType || !["Paid", "Installment"].includes(boughtType)) {
-  //       await session.abortTransaction();
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "boughtType must be either 'Paid' or 'Installment'",
-  //       });
-  //     }
-
-  //     const car = await Car.findById(carId).session(session);
-  //     if (!car) {
-  //       await session.abortTransaction();
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Car not found",
-  //       });
-  //     }
-
-  //     if (!car.isAvailable) {
-  //       await session.abortTransaction();
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Car is already marked as sold",
-  //       });
-  //     }
-
-  //     // Branch by boughtType
-  //     if (boughtType === "Paid") {
-  //       const { sale } = req.body; // <-- destructure sale
-  //       if (
-  //         !sale ||
-  //         !sale.price ||
-  //         !sale.soldDate ||
-  //         !sale.kiloAtSale ||
-  //         !sale.buyer?.name
-  //       ) {
-  //         await session.abortTransaction();
-  //         return res.status(400).json({
-  //           success: false,
-  //           message:
-  //             "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name",
-  //         });
-  //       }
-
-  //       car.markAsPaid({
-  //         price: Number(sale.price),
-  //         date: toDate(sale.soldDate),
-  //         kiloAtSale: Number(sale.kiloAtSale),
-  //         buyer: sale.buyer,
-  //         updatedBy: req.user.userId,
-  //       });
-  //     } else if (boughtType === "Installment") {
-  //       const { installment } = req.body;
-  //       if (
-  //         !installment ||
-  //         !installment.downPayment ||
-  //         !installment.remainingAmount ||
-  //         !installment.months ||
-  //         !installment.buyer?.name
-  //       ) {
-  //         await session.abortTransaction();
-  //         return res.status(400).json({
-  //           success: false,
-  //           message:
-  //             "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name",
-  //         });
-  //       }
-
-  //       car.markAsInstallment({
-  //         downPayment: Number(installment.downPayment),
-  //         remainingAmount: Number(installment.remainingAmount),
-  //         months: Number(installment.months),
-  //         buyer: installment.buyer,
-  //         startDate: installment.startDate
-  //           ? toDate(installment.startDate)
-  //           : new Date(),
-  //         updatedBy: req.user.userId,
-  //       });
-  //     }
-
-  //     const updated = await car.save({ session });
-  //     await session.commitTransaction();
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: `Car marked as sold via ${boughtType}`,
-  //       car: updated.toObject({ virtuals: true }),
-  //     });
-  //   } catch (error) {
-  //     await session.abortTransaction();
-  //     console.error("Error marking car as sold:", error);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: error.message || "Failed to update car",
-  //     });
-  //   } finally {
-  //     session.endSession();
-  //   }
-  // },
-
   // Get single car by ID
   getCarById: async (req, res) => {
     try {
@@ -601,56 +507,74 @@ const carController = {
     }
   },
 
-  // Edit car details
   editCar: async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
       const carId = sanitizeId(req.params.id);
-      const updates = req.body;
-
       const car = await Car.findById(carId).session(session);
       if (!car) {
         await session.abortTransaction();
-        return res.status(404).json({
-          success: false,
-          message: "Car not found",
-        });
+        return res
+          .status(404)
+          .json({ success: false, message: "Car not found" });
       }
 
-      if (!car.isAvailable) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message:
-            "Cannot edit car data after it's sold. Edit sale details instead.",
-        });
+      // Updates
+      const updates = req.body;
+
+      // Handle images
+      let finalImages = [];
+
+      // 1. Keep only images still selected on frontend
+      if (updates.existingImages) {
+        const keep = Array.isArray(updates.existingImages)
+          ? updates.existingImages
+          : [updates.existingImages];
+
+        const toDelete = car.images.filter(
+          (img) => !keep.includes(img.public_id)
+        );
+
+        // Delete from Cloudinary
+        await Promise.all(
+          toDelete.map((img) => cloudinary.uploader.destroy(img.public_id))
+        );
+
+        finalImages = car.images.filter((img) => keep.includes(img.public_id));
       }
 
-      // Check license number uniqueness if being updated
-      if (updates.licenseNo && updates.licenseNo !== car.licenseNo) {
-        const existingCar = await Car.findOne({
-          licenseNo: updates.licenseNo,
-          _id: { $ne: carId },
-        }).session(session);
+      // 2. Upload new files
+      if (req.files && req.files.length > 0) {
+        const uploaded = await Promise.all(
+          req.files.map((file) =>
+            cloudinary.uploader.upload(file.path, {
+              folder: `car-showroom/${car._id}`,
+              use_filename: true,
+              unique_filename: true,
+            })
+          )
+        );
 
-        if (existingCar) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "Car with this license number already exists",
-          });
-        }
+        finalImages.push(
+          ...uploaded.map((img) => ({
+            url: img.secure_url,
+            public_id: img.public_id,
+          }))
+        );
       }
 
+      // Save final images
+      car.images = finalImages;
+
+      // Apply other fields
       const allowedFields = [
         "brand",
         "year",
         "enginePower",
         "gear",
         "color",
-        "images",
         "kilo",
         "wheelDrive",
         "purchaseDate",
@@ -658,19 +582,16 @@ const carController = {
         "priceToSell",
         "licenseNo",
       ];
-
       allowedFields.forEach((field) => {
-        if (field in updates) {
+        if (updates[field] !== undefined) {
           car[field] = updates[field];
         }
       });
 
-      car.updatedBy = req.user.userId;
-
       const updated = await car.save({ session });
       await session.commitTransaction();
 
-      return res.status(200).json({
+      res.status(200).json({
         success: true,
         message: "Car updated successfully",
         car: updated.toObject({ virtuals: true }),
@@ -678,14 +599,12 @@ const carController = {
     } catch (error) {
       await session.abortTransaction();
       console.error("Error editing car:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to edit car",
-      });
+      res.status(500).json({ success: false, message: "Failed to edit car" });
     } finally {
       session.endSession();
     }
   },
+
   // Get sold cars by installment
   getSoldCarsByInstallment: async (req, res, next) => {
     try {
@@ -749,6 +668,59 @@ const carController = {
       });
     } finally {
       session.endSession();
+    }
+  },
+  // controllers/car-controller.js
+  // controllers/car-controller.js
+
+  getProfitAnalysis: async (req, res) => {
+    try {
+      const { period } = req.query;
+      const now = new Date();
+      let startDate;
+
+      if (period === "monthly") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (period === "6months") {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      } else if (period === "yearly") {
+        startDate = new Date(now.getFullYear(), 0, 1);
+      } else {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid period" });
+      }
+
+      // ✅ Filter by soldOutDate
+      const cars = await Car.find({
+        soldOutDate: { $gte: startDate, $lte: now },
+      });
+
+      const report = cars.map((car) => {
+        const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
+        const soldPrice = car.sale?.price || car.resellPrice || car.priceToSell;
+
+        const profit = soldPrice - car.purchasePrice - totalRepairs;
+
+        return {
+          licenseNo: car.licenseNo,
+          brand: car.brand,
+          purchasePrice: car.purchasePrice,
+          soldPrice,
+          totalRepairs,
+          profit,
+          soldOutDate: car.soldOutDate,
+        };
+      });
+
+      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+
+      res.json({ success: true, totalProfit, cars: report });
+    } catch (err) {
+      console.error("Error generating profit analysis:", err);
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to generate report" });
     }
   },
 };

@@ -105,7 +105,12 @@ const carSchema = new mongoose.Schema(
       maxlength: 50,
     },
     images: {
-      type: [String],
+      type: [
+        {
+          url: { type: String, required: true },
+          public_id: { type: String, required: true },
+        },
+      ],
       validate: {
         validator: function (arr) {
           return arr.length <= 20;
@@ -217,10 +222,10 @@ carSchema.virtual("status").get(function () {
   return "Active";
 });
 
-carSchema.virtual("daysInInventory").get(function () {
-  const endDate = this.sale?.date || new Date();
-  return Math.floor((endDate - this.createdAt) / (1000 * 60 * 60 * 24));
-});
+// carSchema.virtual("daysInInventory").get(function () {
+//   const endDate = this.sale?.date || new Date();
+//   return Math.floor((endDate - this.createdAt) / (1000 * 60 * 60 * 24));
+// });
 
 // =======================
 // Middleware

@@ -1,4 +1,3 @@
-// utils/cloudinary.js
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
@@ -8,12 +7,22 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// ✅ Dynamic folder per car
 const storage = new CloudinaryStorage({
   cloudinary,
-  params: {
-    folder: "car-showroom", // ✅ consistent folder
-    allowed_formats: ["jpg", "png", "jpeg"],
-    transformation: [{ width: 800, height: 600, crop: "limit" }], // optional resize
+  params: async (req, file) => {
+    // Default folder
+    let folder = "car-showroom";
+
+    if (req.params.id) {
+      folder = `car-showroom/${req.params.id}`;
+    }
+
+    return {
+      folder,
+      allowed_formats: ["jpg", "png", "jpeg"],
+      transformation: [{ width: 800, height: 600, crop: "limit" }],
+    };
   },
 });
 

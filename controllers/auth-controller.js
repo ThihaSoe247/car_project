@@ -118,11 +118,6 @@ exports.protect = async (req, res, next) => {
       });
     }
 
-    // 👇 Add these debug lines
-    console.log("🔑 Incoming Token:", token);
-    console.log("🔎 Decoded (no verify):", jwt.decode(token));
-    console.log("🕒 Now:", Math.floor(Date.now() / 1000));
-
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     console.log("✅ Verified token:", decoded);

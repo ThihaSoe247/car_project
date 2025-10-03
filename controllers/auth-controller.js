@@ -87,8 +87,7 @@ exports.login = async (req, res) => {
     // Update last login
     user.lastLogin = new Date();
     const token = createToken(user._id, user.role);
-    console.log("JWT:", token);
-    console.log("Decoded:", jwt.decode(token));
+
     await user.save();
 
     sendTokenResponse(user, 200, res);
@@ -120,7 +119,7 @@ exports.protect = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("✅ Verified token:", decoded);
+
     // Check if user still exists
     const currentUser = await User.findById(decoded.userId);
     if (!currentUser) {

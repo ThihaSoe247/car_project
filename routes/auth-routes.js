@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/auth-controller");
+const { protect } = require("../controllers/auth-controller");
+
 const {
   validateRegistration,
   validateLogin,
@@ -11,7 +13,7 @@ router.post("/register", validateRegistration, authController.register);
 router.post("/login", validateLogin, authController.login);
 
 // Protected routes
-router.get("/me", authController.getMe);
+router.get("/me", protect, authController.getMe);
 router.put("/profile", authController.updateProfile);
 
 module.exports = router;

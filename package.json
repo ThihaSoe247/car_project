@@ -20,7 +20,7 @@
   "description": "Backend API for Car Showroom Management System",
   "dependencies": {
     "bcryptjs": "^3.0.2",
-    "cloudinary": "^2.7.0",
+    "cloudinary": "^1.41.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
@@ -37,6 +37,7 @@
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
     "nodemon": "^3.1.10",
+    "streamifier": "^0.1.1",
     "stripe": "^18.4.0"
   },
   "devDependencies": {

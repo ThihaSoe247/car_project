@@ -54,7 +54,6 @@ const carController = {
         wheelDrive,
       } = req.body;
 
-      // Step 1: Create car without images
       const newCar = new Car({
         licenseNo,
         brand,
@@ -72,9 +71,9 @@ const carController = {
 
       await newCar.save();
 
+      // ✅ Upload images from memory
       let imageObjs = [];
 
-      // Step 2: If images are uploaded
       if (req.files && req.files.length > 0) {
         const uploadedImages = await Promise.all(
           req.files.map((file) =>
@@ -88,7 +87,6 @@ const carController = {
         }));
       }
 
-      // Step 3: Save images back to car
       newCar.images = imageObjs;
       await newCar.save();
 
@@ -98,7 +96,6 @@ const carController = {
       res.status(500).json({ success: false, error: err.message });
     }
   },
-
   // Get all cars with pagination and filtering
   getAllCarsList: async (req, res) => {
     try {

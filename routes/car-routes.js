@@ -4,12 +4,9 @@ const carController = require("../controllers/car-controller");
 const multer = require("multer");
 const { canViewProfit } = require("../middleware/authorization");
 
-// ✅ Import protect from auth-controller
 const { protect } = require("../controllers/auth-controller");
 
-// ✅ Import Cloudinary storage instead of memoryStorage
-const { storage } = require("../cloud/cloudinary");
-const upload = multer({ storage });
+const upload = require("../cloud/upload");
 
 const {
   validateCarCreation,

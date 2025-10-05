@@ -2,8 +2,7 @@
 const Car = require("../model/Car");
 const mongoose = require("mongoose");
 const fs = require("fs");
-const { cloudinary } = require("../cloud/cloudinary");
-const { streamUpload } = require("../utils/cloudinary");
+const { cloudinary, streamUpload } = require("../cloud/cloudinary");
 
 // Safe date parser
 const toDate = (v) => {

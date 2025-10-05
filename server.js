@@ -21,12 +21,17 @@ const {
 
 const app = express();
 
+// ✅ Trust proxy (important for Render, Cloudflare, Nginx, etc.)
+app.set("trust proxy", 1);
+
 // Environment variables with defaults
 const PORT = process.env.PORT || 4000;
 const MONGO_URL = process.env.MONGO_URL;
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-// Security middleware
+// ------------------------------
+// 🔒 Security & Middleware Setup
+// ------------------------------
 app.use(securityConfig);
 app.use(cors(corsOptions));
 
@@ -52,11 +57,15 @@ if (NODE_ENV === "development") {
   );
 }
 
-// Rate limiting
+// ------------------------------
+// 🚦 Rate Limiting
+// ------------------------------
 app.use("/api/auth", authLimiter);
 app.use("/api", apiLimiter);
 
-// Health check endpoint
+// ------------------------------
+// 🩺 Health Check Endpoint
+// ------------------------------
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -67,23 +76,29 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Root endpoint
+// ------------------------------
+// 🌍 Root Endpoint
+// ------------------------------
 app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Car Showroom API",
     version: "1.0.0",
     environment: NODE_ENV,
-    documentation: "/api/docs", // You can add API documentation endpoint later
+    documentation: "/api/docs",
   });
 });
 
-// API routes
+// ------------------------------
+// 🛣️ API Routes
+// ------------------------------
 app.use("/api/auth", authRoutes);
 app.use("/api", carRoutes);
 app.use("/api", userRoutes); // User management routes (Moderators only)
 
-// 404 handler
+// ------------------------------
+// ❌ 404 Handler
+// ------------------------------
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -91,10 +106,14 @@ app.use("*", (req, res) => {
   });
 });
 
-// Error handling middleware (must be last)
+// ------------------------------
+// ⚠️ Error Handling Middleware
+// ------------------------------
 app.use(errorHandler);
 
-// Database connection and server startup
+// ------------------------------
+// 🚀 Start Server
+// ------------------------------
 const startServer = async () => {
   try {
     if (!MONGO_URL) {
@@ -122,7 +141,9 @@ const startServer = async () => {
   }
 };
 
-// Graceful shutdown
+// ------------------------------
+// 🧹 Graceful Shutdown
+// ------------------------------
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully");
   mongoose.connection.close(() => {
@@ -139,13 +160,14 @@ process.on("SIGINT", () => {
   });
 });
 
-// Handle unhandled promise rejections
+// ------------------------------
+// 🛑 Error Handling for Crashes
+// ------------------------------
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled Promise Rejection:", err);
   process.exit(1);
 });
 
-// Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);

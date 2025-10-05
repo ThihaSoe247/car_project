@@ -193,7 +193,10 @@ const carController = {
 
       const filter = {
         isAvailable: false,
-        sale: { $exists: true, $ne: null },
+        $or: [
+          { sale: { $exists: true, $ne: null } },
+          { installment: { $exists: true, $ne: null } },
+        ],
       };
 
       // Date range filtering for sold cars

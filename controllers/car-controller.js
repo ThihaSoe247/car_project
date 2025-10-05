@@ -5,18 +5,6 @@ const fs = require("fs");
 const { cloudinary } = require("../cloud/cloudinary");
 const { streamUpload } = require("../utils/cloudinary");
 
-const streamUpload = (fileBuffer, folder) => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder, use_filename: true, unique_filename: true },
-      (error, result) => {
-        if (error) reject(error);
-        else resolve(result);
-      }
-    );
-    stream.end(fileBuffer); // send buffer to Cloudinary
-  });
-};
 // Safe date parser
 const toDate = (v) => {
   if (!v) return v;

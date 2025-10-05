@@ -35,7 +35,6 @@ const UserSchema = new mongoose.Schema(
         values: ["Admin", "Staff", "Moderator"],
         message: "Role must be Admin, Staff, or Moderator",
       },
-      enum: ["Admin", "Staff", "Moderator"],
       default: "Staff",
       required: true,
     },
@@ -60,7 +59,6 @@ const UserSchema = new mongoose.Schema(
 );
 
 // Indexes for performance
-UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
 UserSchema.index({ isActive: 1 });
 

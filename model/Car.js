@@ -189,7 +189,6 @@ carSchema.index({ isAvailable: 1, createdAt: -1 });
 carSchema.index({ brand: 1 });
 carSchema.index({ year: 1 });
 carSchema.index({ "sale.date": -1 });
-carSchema.index({ licenseNo: 1 });
 // carSchema.index({ createdBy: 1 });
 
 // =======================

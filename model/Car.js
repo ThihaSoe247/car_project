@@ -72,9 +72,13 @@ const carSchema = new mongoose.Schema(
   {
     licenseNo: {
       type: String,
+      required: [true, "License number is required"],
       unique: true,
       sparse: true,
       trim: true,
+      uppercase: true,
+      minlength: [2, "License number must be at least 2 characters"],
+      maxlength: [20, "License number cannot exceed 20 characters"],
     },
     brand: {
       type: String,
@@ -89,8 +93,15 @@ const carSchema = new mongoose.Schema(
       min: 1900,
       max: new Date().getFullYear() + 1,
     },
+    model: {
+      type: String,
+      required: [true, "Model is required"],
+      trim: true,
+      maxlength: 100,
+    },
     enginePower: {
       type: String,
+      required: [true, "Engine power is required"],
       trim: true,
       maxlength: 100,
     },
@@ -101,6 +112,7 @@ const carSchema = new mongoose.Schema(
     },
     color: {
       type: String,
+      required: [true, "Color is required"],
       trim: true,
       maxlength: 50,
     },

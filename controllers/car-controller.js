@@ -32,6 +32,7 @@ const carController = {
       const {
         licenseNo,
         brand,
+        model,
         year,
         gear,
         color,
@@ -44,12 +45,13 @@ const carController = {
       } = req.body;
 
       const newCar = new Car({
-        licenseNo,
-        brand,
+        licenseNo: licenseNo?.trim().toUpperCase(),
+        brand: brand?.trim(),
+        model: model?.trim(),
         year: parseInt(year),
         gear,
-        color,
-        enginePower,
+        color: color?.trim(),
+        enginePower: enginePower?.trim(),
         purchasePrice: parseFloat(purchasePrice),
         priceToSell: parseFloat(priceToSell),
         purchaseDate: new Date(purchaseDate),
@@ -513,6 +515,22 @@ const carController = {
       // Updates
       const updates = req.body;
 
+      if (updates.licenseNo) {
+        updates.licenseNo = updates.licenseNo.trim().toUpperCase();
+      }
+      if (updates.brand) {
+        updates.brand = updates.brand.trim();
+      }
+      if (updates.model) {
+        updates.model = updates.model.trim();
+      }
+      if (updates.enginePower) {
+        updates.enginePower = updates.enginePower.trim();
+      }
+      if (updates.color) {
+        updates.color = updates.color.trim();
+      }
+
       // Handle images
       let finalImages = [];
 
@@ -560,6 +578,7 @@ const carController = {
       // Apply other fields
       const allowedFields = [
         "brand",
+        "model",
         "year",
         "enginePower",
         "gear",

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/user-controller");
+const { protect } = require("../controllers/auth-controller");
 const {
   validateUserCreation,
   validateUserUpdate,
@@ -14,12 +15,12 @@ const {
 // All routes require authentication and Moderator role
 
 // Get all users (Moderators only)
-router.get("/users", canManageAccounts, userController.getAllUsers);
+router.get("/users", protect, canManageAccounts, userController.getAllUsers);
 
 // Get single user by ID (Moderators only)
 router.get(
   "/users/:id",
-
+  protect,
   canManageAccounts,
   userController.getUserById
 );
@@ -27,7 +28,7 @@ router.get(
 // Create Admin account (Moderators only)
 router.post(
   "/users/admin",
-
+  protect,
   canCreateAdminAccount,
   validateUserCreation,
   userController.createAdminUser
@@ -36,7 +37,7 @@ router.post(
 // Create regular user account (Moderators only)
 router.post(
   "/users",
-
+  protect,
   canManageAccounts,
   validateUserCreation,
   userController.createUser
@@ -45,7 +46,7 @@ router.post(
 // Update user account (Moderators only)
 router.put(
   "/users/:id",
-
+  protect,
   canManageAccounts,
   validateUserUpdate,
   userController.updateUser
@@ -54,7 +55,7 @@ router.put(
 // Deactivate/Activate user account (Moderators only)
 router.patch(
   "/users/:id/status",
-
+  protect,
   canManageAccounts,
   userController.toggleUserStatus
 );
@@ -62,7 +63,7 @@ router.patch(
 // Delete user account (Moderators only)
 router.delete(
   "/users/:id",
-
+  protect,
   canManageAccounts,
   userController.deleteUser
 );

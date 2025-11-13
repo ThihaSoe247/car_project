@@ -14,6 +14,6 @@ router.post("/login", validateLogin, authController.login);
 
 // Protected routes
 router.get("/me", protect, authController.getMe);
-router.put("/profile", authController.updateProfile);
+router.put("/profile", protect, authController.updateProfile);
 
 module.exports = router;

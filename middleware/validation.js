@@ -91,16 +91,45 @@ const validateLogin = [
 
 // Car creation validation
 const validateCarCreation = [
+  body("licenseNo")
+    .isString()
+    .withMessage("License number must be a string")
+    .trim()
+    .customSanitizer((value) =>
+      typeof value === "string" ? value.toUpperCase() : value
+    )
+    .isLength({ min: 2, max: 20 })
+    .withMessage("License number must be between 2 and 20 characters")
+    .matches(/^[A-Za-z0-9\- ]+$/)
+    .withMessage("License number can only contain letters, numbers, spaces, and dashes"),
   body("brand")
     .trim()
     .isLength({ min: 1, max: 50 })
     .withMessage("Brand is required and must be less than 50 characters"),
+  body("model")
+    .isString()
+    .withMessage("Model must be a string")
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Model is required and must be less than 100 characters"),
   body("year")
     .isInt({ min: 1900, max: new Date().getFullYear() + 1 })
     .withMessage("Please provide a valid year"),
+  body("enginePower")
+    .isString()
+    .withMessage("Engine power must be a string")
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Engine power is required and must be less than 100 characters"),
   body("gear")
     .isIn(["Manual", "Automatic"])
     .withMessage("Gear must be either Manual or Automatic"),
+  body("color")
+    .isString()
+    .withMessage("Color must be a string")
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage("Color is required and must be less than 50 characters"),
   body("kilo")
     .isFloat({ min: 0 })
     .withMessage("Kilometer reading must be a positive number"),

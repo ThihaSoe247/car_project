@@ -30,16 +30,16 @@ router.get("/cars/available", canViewCars, carController.getAvailableCars);
 router.get("/cars/sold", canViewCars, carController.getSoldCarsList);
 router.get("/car/:id", canViewCars, carController.getCarById);
 
-// ===== STAFF ACCESS =====
+// ===== ADMIN ONLY ACCESS =====
 router.post(
   "/create-car",
+  protect,
   canAddCarInfo,
   upload.array("images", 10), // ✅ goes directly to Cloudinary
   validateCarCreation,
   carController.createCar
 );
 
-// ===== ADMIN ONLY ACCESS =====
 router.put(
   "/car/:id/sell",
   protect,

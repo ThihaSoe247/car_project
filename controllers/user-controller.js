@@ -131,7 +131,7 @@ const userController = {
     try {
       const { name, email, password, role } = req.body;
 
-      // Validate role - Moderators can only create Admin and Staff users
+      // Validate role - Moderators can only create Admin users
       if (role === "Moderator") {
         return res.status(403).json({
           success: false,
@@ -153,7 +153,7 @@ const userController = {
         name,
         email,
         password,
-        role: role || "Staff",
+        role: role || "Admin",
         // createdBy: req.user.userId
       });
 

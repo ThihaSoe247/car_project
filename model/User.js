@@ -32,10 +32,10 @@ const UserSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ["Admin", "Staff", "Moderator"],
-        message: "Role must be Admin, Staff, or Moderator",
+        values: ["Admin", "Moderator"],
+        message: "Role must be Admin or Moderator",
       },
-      default: "Staff",
+      default: "Admin",
       required: true,
     },
     isActive: {

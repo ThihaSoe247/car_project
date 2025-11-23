@@ -23,9 +23,6 @@ const sanitizeId = (id) => {
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
-// Default user ID for Staff operations (when no authentication)
-const STAFF_USER_ID = new mongoose.Types.ObjectId("000000000000000000000000");
-
 const carController = {
   createCar: async (req, res) => {
     try {
@@ -277,6 +274,23 @@ const carController = {
           success: false,
           error: "Car not found",
         });
+      }
+
+      // Delete all images from Cloudinary before deleting car
+      if (car.images && car.images.length > 0) {
+        await Promise.all(
+          car.images.map((img) =>
+            cloudinary.uploader
+              .destroy(img.public_id)
+              .catch((err) => {
+                // Log error but don't fail the deletion
+                console.error(
+                  `Failed to delete Cloudinary image ${img.public_id}:`,
+                  err
+                );
+              })
+          )
+        );
       }
 
       await car.deleteOne();
@@ -532,10 +546,11 @@ const carController = {
       }
 
       // Handle images
-      let finalImages = [];
+      // Start with existing images (preserve them by default)
+      let finalImages = car.images || [];
 
-      // 1. Keep only images still selected on frontend
-      if (updates.existingImages) {
+      // 1. Keep only images still selected on frontend (if provided)
+      if (updates.existingImages !== undefined) {
         const keep = Array.isArray(updates.existingImages)
           ? updates.existingImages
           : [updates.existingImages];
@@ -556,11 +571,7 @@ const carController = {
       if (req.files && req.files.length > 0) {
         const uploaded = await Promise.all(
           req.files.map((file) =>
-            cloudinary.uploader.upload(file.path, {
-              folder: `car-showroom/${car._id}`,
-              use_filename: true,
-              unique_filename: true,
-            })
+            streamUpload(file.buffer, `car-showroom/${car._id}`)
           )
         );
 
@@ -572,8 +583,10 @@ const carController = {
         );
       }
 
-      // Save final images
-      car.images = finalImages;
+      // Save final images (only update if images were actually modified)
+      if (updates.existingImages !== undefined || (req.files && req.files.length > 0)) {
+        car.images = finalImages;
+      }
 
       // Apply other fields
       const allowedFields = [

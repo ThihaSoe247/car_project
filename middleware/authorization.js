@@ -139,9 +139,9 @@ const canViewAllData = (req, res, next) => {
   next();
 };
 
-// ===== STAFF PERMISSIONS (Limited Access Without Authentication) =====
+// ===== PUBLIC ACCESS (No Authentication Required) =====
 const canViewCars = (req, res, next) => {
-  // Staff can view cars without authentication
+  // Public can view cars without authentication
   next();
 };
 
@@ -154,10 +154,10 @@ const canViewCarsInternal = (req, res, next) => {
     });
   }
 
-  if (!["Admin", "Moderator", "Staff"].includes(req.user.role)) {
+  if (!["Admin", "Moderator"].includes(req.user.role)) {
     return res.status(403).json({
       success: false,
-      message: "Only authenticated Admin, Moderator, or Staff can access this data",
+      message: "Only authenticated Admin or Moderator can access this data",
     });
   }
   next();
@@ -215,7 +215,7 @@ module.exports = {
   canMarkAsSold,
   canViewAllData,
   canViewProfit,
-  // Staff permissions (no auth required)
+  // Public access (no auth required)
   canViewCars,
   canAddCarInfo,
   // Internal access (auth required)

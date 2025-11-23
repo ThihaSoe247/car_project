@@ -40,7 +40,7 @@ exports.register = async (req, res) => {
       name,
       email,
       password,
-      role: role || "Staff", // Default to Staff if not specified
+      role: role || "Admin", // Default to Admin if not specified
     });
 
     await user.save();

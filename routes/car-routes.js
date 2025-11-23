@@ -11,15 +11,16 @@ const upload = require("../cloud/upload");
 const {
   validateCarCreation,
   validateCarSale,
+  validateSaleUpdate,
   validateRepair,
 } = require("../middleware/validation");
 
 const {
-  canCreateCar,
+  //canCreateCar,
   canEditCar,
   canMarkAsSold,
-  canViewAllData,
-  canViewCars,
+  //canViewAllData,
+  //canViewCars,
   canViewCarsInternal,
   canAddCarInfo,
   publicAccess,
@@ -66,6 +67,7 @@ router.put(
   "/car/:id/edit-sale",
   protect,
   canEditCar,
+  validateSaleUpdate,
   carController.editSaleInfo
 );
 

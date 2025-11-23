@@ -31,7 +31,7 @@ const validateRegistration = [
     .withMessage("Password must be at least 6 characters long"),
   body("role")
     .optional()
-    .isIn(["Admin", "Staff", "Moderator"])
+    .isIn(["Admin", "Moderator"])
     .withMessage("Invalid role specified"),
   handleValidationErrors,
 ];
@@ -51,8 +51,8 @@ const validateUserCreation = [
     .withMessage("Password must be at least 6 characters long"),
   body("role")
     .optional()
-    .isIn(["Admin", "Staff"])
-    .withMessage("Role must be either Admin or Staff"),
+    .isIn(["Admin"])
+    .withMessage("Role must be Admin"),
   handleValidationErrors,
 ];
 
@@ -70,8 +70,8 @@ const validateUserUpdate = [
     .withMessage("Please provide a valid email"),
   body("role")
     .optional()
-    .isIn(["Admin", "Staff"])
-    .withMessage("Role must be either Admin or Staff"),
+    .isIn(["Admin"])
+    .withMessage("Role must be Admin"),
   body("isActive")
     .optional()
     .isBoolean()
@@ -215,6 +215,49 @@ const validateCarSale = [
   handleValidationErrors,
 ];
 
+// Sale update validation (for editing existing sale info)
+const validateSaleUpdate = [
+  // Buyer name validation (optional, but if provided must be valid)
+  body("buyer.name")
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Buyer name must be between 1 and 100 characters"),
+
+  // Buyer phone validation (optional, but if provided must match phone format)
+  body("buyer.phone")
+    .optional()
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
+
+  // Buyer email validation (optional, but if provided must be valid email)
+  body("buyer.email")
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid buyer email"),
+
+  // Price validation (optional, but if provided must be positive number)
+  body("price")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Price must be a positive number"),
+
+  // KiloAtSale validation (optional, but if provided must be positive number)
+  body("kiloAtSale")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Kilometer at sale must be a positive number"),
+
+  // SaleDate validation (optional, but if provided must be valid ISO8601 date)
+  body("saleDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid sale date"),
+
+  handleValidationErrors,
+];
+
 // Repair validation
 const validateRepair = [
   body("description")
@@ -239,6 +282,7 @@ module.exports = {
   validateLogin,
   validateCarCreation,
   validateCarSale,
+  validateSaleUpdate,
   validateRepair,
   handleValidationErrors,
 };

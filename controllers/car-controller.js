@@ -588,6 +588,54 @@ const carController = {
         car.images = finalImages;
       }
 
+      // Handle repairs array (replace entire array if provided)
+      if (updates.repairs !== undefined) {
+        // Validate that it's an array
+        if (!Array.isArray(updates.repairs)) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "Repairs must be an array",
+          });
+        }
+
+        // Validate and transform each repair entry
+        try {
+          const validatedRepairs = updates.repairs.map((repair, index) => {
+            // Validate required fields
+            if (!repair.description || repair.cost == null) {
+              throw new Error(`Repair at index ${index} is missing required fields (description, cost)`);
+            }
+
+            // Transform and validate
+            return {
+              description: String(repair.description).trim(),
+              repairDate: toDate(repair.repairDate) || new Date(),
+              cost: Number(repair.cost),
+            };
+          });
+
+          // Validate cost is not NaN and is positive
+          const invalidRepairs = validatedRepairs.filter(r => isNaN(r.cost) || r.cost < 0);
+          if (invalidRepairs.length > 0) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              message: "Invalid repair cost values detected",
+            });
+          }
+
+          // Replace the entire repairs array
+          car.repairs = validatedRepairs;
+        } catch (error) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: error.message || "Invalid repairs data",
+          });
+        }
+      }
+
       // Apply other fields
       const allowedFields = [
         "brand",

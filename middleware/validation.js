@@ -275,6 +275,28 @@ const validateRepair = [
   handleValidationErrors,
 ];
 
+// Repair array validation (for editCar)
+const validateRepairsArray = [
+  body("repairs")
+    .optional()
+    .isArray()
+    .withMessage("Repairs must be an array"),
+  body("repairs.*.description")
+    .if(body("repairs").exists())
+    .trim()
+    .isLength({ min: 1, max: 500 })
+    .withMessage("Each repair description must be between 1 and 500 characters"),
+  body("repairs.*.repairDate")
+    .if(body("repairs").exists())
+    .isISO8601()
+    .withMessage("Each repair date must be a valid ISO8601 date"),
+  body("repairs.*.cost")
+    .if(body("repairs").exists())
+    .isFloat({ min: 0 })
+    .withMessage("Each repair cost must be a positive number"),
+  handleValidationErrors,
+];
+
 module.exports = {
   validateRegistration,
   validateUserCreation,
@@ -284,5 +306,6 @@ module.exports = {
   validateCarSale,
   validateSaleUpdate,
   validateRepair,
+  validateRepairsArray,
   handleValidationErrors,
 };

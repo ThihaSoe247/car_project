@@ -13,6 +13,7 @@ const {
   validateCarSale,
   validateSaleUpdate,
   validateRepair,
+  validateRepairsArray,
 } = require("../middleware/validation");
 
 const {
@@ -59,6 +60,7 @@ router.put(
   "/car/:id/edit",
   protect,
   canEditCar,
+  validateRepairsArray,
   upload.array("images", 10), // ✅ goes directly to Cloudinary
   carController.editCar
 );

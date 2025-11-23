@@ -145,6 +145,24 @@ const canViewCars = (req, res, next) => {
   next();
 };
 
+// ===== INTERNAL ACCESS (Authentication Required) =====
+const canViewCarsInternal = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
+    });
+  }
+
+  if (!["Admin", "Moderator", "Staff"].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only authenticated Admin, Moderator, or Staff can access this data",
+    });
+  }
+  next();
+};
+
 const canAddCarInfo = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
@@ -200,6 +218,8 @@ module.exports = {
   // Staff permissions (no auth required)
   canViewCars,
   canAddCarInfo,
+  // Internal access (auth required)
+  canViewCarsInternal,
   // Public access
   publicAccess,
 };

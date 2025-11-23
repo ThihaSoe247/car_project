@@ -20,15 +20,21 @@ const {
   canMarkAsSold,
   canViewAllData,
   canViewCars,
+  canViewCarsInternal,
   canAddCarInfo,
   publicAccess,
 } = require("../middleware/authorization");
 
-// ===== PUBLIC/STAFF ACCESS =====
-router.get("/cars", canViewCars, carController.getAllCarsList);
-router.get("/cars/available", canViewCars, carController.getAvailableCars);
-router.get("/cars/sold", canViewCars, carController.getSoldCarsList);
-router.get("/car/:id", canViewCars, carController.getCarById);
+// ===== PUBLIC ACCESS (No Authentication, No Buyer Data) =====
+router.get("/public/cars", publicAccess, carController.getPublicCarList);
+router.get("/public/cars/available", publicAccess, carController.getPublicAvailableCars);
+router.get("/public/car/:id", publicAccess, carController.getPublicCarById);
+
+// ===== INTERNAL ACCESS (Authentication Required - Full Data) =====
+router.get("/cars", protect, canViewCarsInternal, carController.getAllCarsList);
+router.get("/cars/available", protect, canViewCarsInternal, carController.getAvailableCars);
+router.get("/cars/sold", protect, canViewCarsInternal, carController.getSoldCarsList);
+router.get("/car/:id", protect, canViewCarsInternal, carController.getCarById);
 
 // ===== ADMIN ONLY ACCESS =====
 router.post(
@@ -75,7 +81,8 @@ router.post(
 
 router.get(
   "/cars/sold/installment",
-  canViewCars,
+  protect,
+  canViewCarsInternal,
   carController.getSoldCarsByInstallment
 );
 

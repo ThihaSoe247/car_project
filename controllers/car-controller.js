@@ -731,6 +731,144 @@ const carController = {
         .json({ success: false, message: "Failed to generate report" });
     }
   },
+
+  // ===== PUBLIC ACCESS METHODS (No Buyer/Sale Data) =====
+
+  // Get all cars for public access (no sensitive data)
+  getPublicCarList: async (req, res) => {
+    try {
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const limit = Math.min(
+        parseInt(req.query.limit) || DEFAULT_LIMIT,
+        MAX_LIMIT
+      );
+      const skip = (page - 1) * limit;
+
+      // Build filter based on query parameters
+      const filter = {};
+
+      if (req.query.brand) {
+        filter.brand = new RegExp(req.query.brand, "i");
+      }
+
+      if (req.query.year) {
+        filter.year = parseInt(req.query.year);
+      }
+
+      if (req.query.gear) {
+        filter.gear = req.query.gear;
+      }
+
+      if (req.query.wheelDrive) {
+        filter.wheelDrive = req.query.wheelDrive;
+      }
+
+      // Select only safe fields (exclude sale, installment, repairs, purchasePrice, etc.)
+      const safeFields =
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+
+      const [cars, total] = await Promise.all([
+        Car.find(filter)
+          .select(safeFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Car.countDocuments(filter),
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        data: cars,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      console.error("Failed to fetch public cars list:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
+
+  // Get available cars for public access (no sensitive data)
+  getPublicAvailableCars: async (req, res) => {
+    try {
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const limit = Math.min(
+        parseInt(req.query.limit) || DEFAULT_LIMIT,
+        MAX_LIMIT
+      );
+      const skip = (page - 1) * limit;
+
+      // Select only safe fields
+      const safeFields =
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+
+      const [cars, total] = await Promise.all([
+        Car.find({ isAvailable: true })
+          .select(safeFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Car.countDocuments({ isAvailable: true }),
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        data: cars,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      console.error("Failed to fetch public available cars:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
+
+  // Get single car by ID for public access (no sensitive data)
+  getPublicCarById: async (req, res) => {
+    try {
+      const carId = sanitizeId(req.params.id);
+
+      // Select only safe fields
+      const safeFields =
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+
+      const car = await Car.findById(carId).select(safeFields).lean();
+
+      if (!car) {
+        return res.status(404).json({
+          success: false,
+          message: "Car not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: car,
+      });
+    } catch (error) {
+      console.error("Error fetching public car details:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
 };
 
 module.exports = carController;

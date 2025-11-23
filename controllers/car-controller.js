@@ -39,7 +39,64 @@ const carController = {
         purchaseDate,
         kilo,
         wheelDrive,
+        repairs,
       } = req.body;
+
+      // Handle repairs array (parse JSON string if needed, validate and transform)
+      let validatedRepairs = [];
+      if (repairs !== undefined && repairs !== null) {
+        // Parse if it's a JSON string (fallback for edge cases)
+        let repairsArray = repairs;
+        if (typeof repairs === "string") {
+          try {
+            repairsArray = JSON.parse(repairs);
+          } catch (e) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid repairs JSON format",
+            });
+          }
+        }
+
+        // Validate that it's an array
+        if (!Array.isArray(repairsArray)) {
+          return res.status(400).json({
+            success: false,
+            message: "Repairs must be an array",
+          });
+        }
+
+        // Validate and transform each repair entry
+        try {
+          validatedRepairs = repairsArray.map((repair, index) => {
+            // Validate required fields
+            if (!repair.description || repair.cost == null) {
+              throw new Error(`Repair at index ${index} is missing required fields (description, cost)`);
+            }
+
+            // Transform and validate
+            return {
+              description: String(repair.description).trim(),
+              repairDate: toDate(repair.repairDate) || new Date(),
+              cost: Number(repair.cost),
+            };
+          });
+
+          // Validate cost is not NaN and is positive
+          const invalidRepairs = validatedRepairs.filter(r => isNaN(r.cost) || r.cost < 0);
+          if (invalidRepairs.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid repair cost values detected",
+            });
+          }
+        } catch (error) {
+          return res.status(400).json({
+            success: false,
+            message: error.message || "Invalid repairs data",
+          });
+        }
+      }
 
       const newCar = new Car({
         licenseNo: licenseNo?.trim().toUpperCase(),
@@ -55,6 +112,7 @@ const carController = {
         kilo: parseFloat(kilo),
         wheelDrive,
         images: [],
+        repairs: validatedRepairs,
       });
 
       await newCar.save();

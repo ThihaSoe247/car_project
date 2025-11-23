@@ -145,6 +145,46 @@ const validateCarCreation = [
   body("purchaseDate")
     .isISO8601()
     .withMessage("Please provide a valid purchase date"),
+  // Repairs validation (optional, for car creation)
+  body("repairs")
+    .optional()
+    .customSanitizer((value) => {
+      if (value === undefined || value === null) {
+        return value;
+      }
+      // If it's a string, try to parse it as JSON (common with multipart/form-data)
+      if (typeof value === "string") {
+        try {
+          const parsed = JSON.parse(value);
+          return parsed;
+        } catch (e) {
+          // Return as-is if parsing fails, validation will catch it
+          return value;
+        }
+      }
+      return value;
+    })
+    .custom((value) => {
+      // If repairs is provided, it must be an array
+      if (value !== undefined && value !== null && !Array.isArray(value)) {
+        throw new Error("Repairs must be an array");
+      }
+      return true;
+    }),
+  // Validate array items (only runs if repairs is an array)
+  body("repairs.*.description")
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 500 })
+    .withMessage("Each repair description must be between 1 and 500 characters"),
+  body("repairs.*.repairDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Each repair date must be a valid ISO8601 date"),
+  body("repairs.*.cost")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Each repair cost must be a positive number"),
   handleValidationErrors,
 ];
 const validateCarSale = [

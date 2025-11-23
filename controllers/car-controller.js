@@ -590,6 +590,19 @@ const carController = {
 
       // Handle repairs array (replace entire array if provided)
       if (updates.repairs !== undefined) {
+        // Parse if it's still a JSON string (fallback for edge cases)
+        if (typeof updates.repairs === "string") {
+          try {
+            updates.repairs = JSON.parse(updates.repairs);
+          } catch (e) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              message: "Invalid repairs JSON format",
+            });
+          }
+        }
+
         // Validate that it's an array
         if (!Array.isArray(updates.repairs)) {
           await session.abortTransaction();

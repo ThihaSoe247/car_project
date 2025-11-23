@@ -277,21 +277,44 @@ const validateRepair = [
 
 // Repair array validation (for editCar)
 const validateRepairsArray = [
+  // Parse repairs if it's a JSON string (common with multipart/form-data)
   body("repairs")
     .optional()
-    .isArray()
-    .withMessage("Repairs must be an array"),
+    .customSanitizer((value) => {
+      if (value === undefined || value === null) {
+        return value;
+      }
+      // If it's a string, try to parse it as JSON
+      if (typeof value === "string") {
+        try {
+          const parsed = JSON.parse(value);
+          return parsed;
+        } catch (e) {
+          // Return as-is if parsing fails, validation will catch it
+          return value;
+        }
+      }
+      return value;
+    })
+    .custom((value) => {
+      // If repairs is provided, it must be an array
+      if (value !== undefined && value !== null && !Array.isArray(value)) {
+        throw new Error("Repairs must be an array");
+      }
+      return true;
+    }),
+  // Validate array items (only runs if repairs is an array)
   body("repairs.*.description")
-    .if(body("repairs").exists())
+    .optional()
     .trim()
     .isLength({ min: 1, max: 500 })
     .withMessage("Each repair description must be between 1 and 500 characters"),
   body("repairs.*.repairDate")
-    .if(body("repairs").exists())
+    .optional()
     .isISO8601()
     .withMessage("Each repair date must be a valid ISO8601 date"),
   body("repairs.*.cost")
-    .if(body("repairs").exists())
+    .optional()
     .isFloat({ min: 0 })
     .withMessage("Each repair cost must be a positive number"),
   handleValidationErrors,

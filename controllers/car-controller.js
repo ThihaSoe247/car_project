@@ -98,48 +98,74 @@ const carController = {
         }
       }
 
-      const newCar = new Car({
-        licenseNo: licenseNo?.trim().toUpperCase(),
-        brand: brand?.trim(),
-        model: model?.trim(),
-        year: parseInt(year),
-        gear,
-        color: color?.trim(),
-        enginePower: enginePower?.trim(),
-        purchasePrice: parseFloat(purchasePrice),
-        priceToSell: parseFloat(priceToSell),
-        purchaseDate: new Date(purchaseDate),
-        kilo: parseFloat(kilo),
-        wheelDrive,
-        images: [],
-        repairs: validatedRepairs,
-      });
-
-      await newCar.save();
-
-      // ✅ Upload images from memory
+      // ✅ Upload images from memory FIRST (before creating car)
+      // This ensures we only create the car if images upload successfully
       let imageObjs = [];
+      let uploadedImageIds = []; // Track uploaded images for cleanup on failure
 
       if (req.files && req.files.length > 0) {
-        const uploadedImages = await Promise.all(
-          req.files.map((file) =>
-            streamUpload(file.buffer, `car-showroom/${newCar._id}`)
-          )
-        );
+        try {
+          const uploadedImages = await Promise.all(
+            req.files.map((file) =>
+              streamUpload(file.buffer, `car-showroom`)
+            )
+          );
 
-        imageObjs = uploadedImages.map((img) => ({
-          url: img.secure_url,
-          public_id: img.public_id,
-        }));
+          imageObjs = uploadedImages.map((img) => ({
+            url: img.secure_url,
+            public_id: img.public_id,
+          }));
+          uploadedImageIds = imageObjs.map((img) => img.public_id);
+        } catch (uploadError) {
+          // Clean up any images that were successfully uploaded before the failure
+          // Note: Promise.all fails fast, so this cleanup handles partial uploads
+          console.error("Error uploading images:", uploadError);
+          // If upload fails, imageObjs will be empty, so no cleanup needed
+          throw new Error("Failed to upload images: " + uploadError.message);
+        }
       }
 
-      newCar.images = imageObjs;
-      await newCar.save();
+      // ✅ Create car with images in single save operation
+      // This prevents the double-save issue and ensures atomicity
+      try {
+        const newCar = new Car({
+          licenseNo: licenseNo?.trim().toUpperCase(),
+          brand: brand?.trim(),
+          model: model?.trim(),
+          year: parseInt(year),
+          gear,
+          color: color?.trim(),
+          enginePower: enginePower?.trim(),
+          purchasePrice: parseFloat(purchasePrice),
+          priceToSell: parseFloat(priceToSell),
+          purchaseDate: new Date(purchaseDate),
+          kilo: parseFloat(kilo),
+          wheelDrive,
+          images: imageObjs,
+          repairs: validatedRepairs,
+        });
 
-      res.status(201).json({ success: true, data: newCar });
+        await newCar.save();
+
+        res.status(201).json({ success: true, data: newCar });
+      } catch (saveError) {
+        // ✅ Clean up uploaded images if car creation fails
+        if (uploadedImageIds.length > 0) {
+          console.error("Car creation failed, cleaning up uploaded images");
+          await Promise.all(
+            uploadedImageIds.map((publicId) =>
+              cloudinary.uploader.destroy(publicId).catch((err) => {
+                // Log but don't fail - cleanup errors are non-critical
+                console.error(`Failed to delete image ${publicId}:`, err);
+              })
+            )
+          );
+        }
+        throw saveError;
+      }
     } catch (err) {
       console.error("Error creating car:", err);
-      res.status(500).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, message: err.message || "Failed to create car" });
     }
   },
   // Get all cars with pagination and filtering
@@ -325,12 +351,13 @@ const carController = {
   // DELETE a car by ID (Admin only)
   deleteCar: async (req, res, next) => {
     try {
-      const car = await Car.findById(req.params.id);
+      const carId = sanitizeId(req.params.id);
+      const car = await Car.findById(carId);
 
       if (!car) {
         return res.status(404).json({
           success: false,
-          error: "Car not found",
+          message: "Car not found",
         });
       }
 
@@ -404,25 +431,56 @@ const carController = {
           !sale.price ||
           !sale.soldDate ||
           !sale.kiloAtSale ||
-          !sale.buyer?.name
+          !sale.buyer?.name ||
+          !sale.buyer?.passport
         ) {
           await session.abortTransaction();
           return res.status(400).json({
             success: false,
             message:
-              "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name",
+              "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name, sale.buyer.passport",
+          });
+        }
+
+        // ✅ Validate number conversions to prevent NaN
+        const salePrice = Number(sale.price);
+        const kiloAtSaleNum = Number(sale.kiloAtSale);
+        
+        if (isNaN(salePrice) || salePrice <= 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "sale.price must be a valid positive number",
+          });
+        }
+
+        if (isNaN(kiloAtSaleNum) || kiloAtSaleNum < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "sale.kiloAtSale must be a valid non-negative number",
+          });
+        }
+
+        // ✅ Validate date is not null
+        const saleDate = toDate(sale.soldDate);
+        if (!saleDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "sale.soldDate must be a valid date",
           });
         }
 
         car.markAsPaid({
-          price: Number(sale.price),
-          date: toDate(sale.soldDate),
-          kiloAtSale: Number(sale.kiloAtSale),
+          price: salePrice,
+          date: saleDate,
+          kiloAtSale: kiloAtSaleNum,
           buyer: sale.buyer,
           updatedBy: req.user.userId,
         });
 
-        finalSalePrice = Number(sale.price);
+        finalSalePrice = salePrice;
 
         // === Installment ===
       } else if (boughtType === "Installment") {
@@ -432,30 +490,71 @@ const carController = {
           !installment.downPayment ||
           !installment.remainingAmount ||
           !installment.months ||
-          !installment.buyer?.name
+          !installment.buyer?.name ||
+          !installment.buyer?.passport
         ) {
           await session.abortTransaction();
           return res.status(400).json({
             success: false,
             message:
-              "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name",
+              "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name, installment.buyer.passport",
           });
         }
 
+        // ✅ Validate number conversions to prevent NaN
+        const downPayment = Number(installment.downPayment);
+        const remainingAmount = Number(installment.remainingAmount);
+        const months = Number(installment.months);
+
+        if (isNaN(downPayment) || downPayment < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "installment.downPayment must be a valid non-negative number",
+          });
+        }
+
+        if (isNaN(remainingAmount) || remainingAmount < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "installment.remainingAmount must be a valid non-negative number",
+          });
+        }
+
+        if (isNaN(months) || months < 1 || !Number.isInteger(months)) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "installment.months must be a valid positive integer",
+          });
+        }
+
+        // ✅ Validate startDate if provided
+        let startDate = new Date();
+        if (installment.startDate) {
+          const parsedStartDate = toDate(installment.startDate);
+          if (!parsedStartDate) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              message: "installment.startDate must be a valid date",
+            });
+          }
+          startDate = parsedStartDate;
+        }
+
         car.markAsInstallment({
-          downPayment: Number(installment.downPayment),
-          remainingAmount: Number(installment.remainingAmount),
-          months: Number(installment.months),
+          downPayment,
+          remainingAmount,
+          months,
           buyer: installment.buyer,
-          startDate: installment.startDate
-            ? toDate(installment.startDate)
-            : new Date(),
+          startDate,
           updatedBy: req.user.userId,
         });
 
         // Total price = downPayment + remaining
-        finalSalePrice =
-          Number(installment.downPayment) + Number(installment.remainingAmount);
+        finalSalePrice = downPayment + remainingAmount;
       }
 
       // === Ensure isAvailable is set to false ===
@@ -521,7 +620,7 @@ const carController = {
     session.startTransaction();
 
     try {
-      const carId = sanitizeId(req.params.carId);
+      const carId = sanitizeId(req.params.id);
       const { description, repairDate, cost } = req.body;
 
       if (!description || cost == null) {
@@ -706,26 +805,19 @@ const carController = {
         }
       }
 
-      // Apply other fields
-      const allowedFields = [
-        "brand",
-        "model",
-        "year",
-        "enginePower",
-        "gear",
-        "color",
-        "kilo",
-        "wheelDrive",
-        "purchaseDate",
-        "purchasePrice",
-        "priceToSell",
-        "licenseNo",
-      ];
-      allowedFields.forEach((field) => {
-        if (updates[field] !== undefined) {
-          car[field] = updates[field];
-        }
-      });
+      // Apply other fields with proper type conversion
+      if (updates.brand !== undefined) car.brand = String(updates.brand).trim();
+      if (updates.model !== undefined) car.model = String(updates.model).trim();
+      if (updates.year !== undefined) car.year = parseInt(updates.year);
+      if (updates.enginePower !== undefined) car.enginePower = String(updates.enginePower).trim();
+      if (updates.gear !== undefined) car.gear = updates.gear;
+      if (updates.color !== undefined) car.color = String(updates.color).trim();
+      if (updates.kilo !== undefined) car.kilo = parseFloat(updates.kilo);
+      if (updates.wheelDrive !== undefined) car.wheelDrive = updates.wheelDrive;
+      if (updates.purchaseDate !== undefined) car.purchaseDate = new Date(updates.purchaseDate);
+      if (updates.purchasePrice !== undefined) car.purchasePrice = parseFloat(updates.purchasePrice);
+      if (updates.priceToSell !== undefined) car.priceToSell = parseFloat(updates.priceToSell);
+      if (updates.licenseNo !== undefined) car.licenseNo = String(updates.licenseNo).trim().toUpperCase();
 
       const updated = await car.save({ session });
       await session.commitTransaction();
@@ -781,12 +873,59 @@ const carController = {
 
       const { buyer, kiloAtSale, saleDate, price } = req.body;
 
-      if (buyer?.name) car.sale.buyer.name = buyer.name;
-      if (buyer?.phone) car.sale.buyer.phone = buyer.phone;
-      if (buyer?.email) car.sale.buyer.email = buyer.email;
-      if (kiloAtSale != null) car.sale.kiloAtSale = Number(kiloAtSale);
-      if (saleDate) car.sale.date = toDate(saleDate);
-      if (price != null) car.sale.price = Number(price);
+      // ✅ Validate passport when updating buyer (passport is required in schema)
+      if (buyer) {
+        if (!buyer.passport) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "buyer.passport is required when updating buyer information",
+          });
+        }
+        if (buyer.name) car.sale.buyer.name = buyer.name;
+        if (buyer.phone) car.sale.buyer.phone = buyer.phone;
+        if (buyer.email) car.sale.buyer.email = buyer.email;
+        car.sale.buyer.passport = buyer.passport; // Always update passport if buyer is provided
+      }
+
+      // ✅ Validate number conversions
+      if (kiloAtSale != null) {
+        const kiloAtSaleNum = Number(kiloAtSale);
+        if (isNaN(kiloAtSaleNum) || kiloAtSaleNum < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "kiloAtSale must be a valid non-negative number",
+          });
+        }
+        car.sale.kiloAtSale = kiloAtSaleNum;
+      }
+
+      // ✅ Validate date conversion
+      if (saleDate) {
+        const parsedSaleDate = toDate(saleDate);
+        if (!parsedSaleDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "saleDate must be a valid date",
+          });
+        }
+        car.sale.date = parsedSaleDate;
+      }
+
+      // ✅ Validate price conversion
+      if (price != null) {
+        const priceNum = Number(price);
+        if (isNaN(priceNum) || priceNum <= 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "price must be a valid positive number",
+          });
+        }
+        car.sale.price = priceNum;
+      }
 
       car.updatedBy = req.user.userId;
 

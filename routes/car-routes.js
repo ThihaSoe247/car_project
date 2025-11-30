@@ -43,8 +43,8 @@ router.post(
   "/create-car",
   protect,
   canAddCarInfo,
-  upload.array("images", 10), // ✅ goes directly to Cloudinary
-  validateCarCreation,
+  validateCarCreation, // ✅ Validate BEFORE file upload
+  upload.array("images", 10), // ✅ Upload after validation
   carController.createCar
 );
 
@@ -60,8 +60,8 @@ router.put(
   "/car/:id/edit",
   protect,
   canEditCar,
-  validateRepairsArray,
-  upload.array("images", 10), // ✅ goes directly to Cloudinary
+  validateRepairsArray, // ✅ Validate BEFORE file upload
+  upload.array("images", 10), // ✅ Upload after validation
   carController.editCar
 );
 
@@ -76,7 +76,7 @@ router.put(
 router.delete("/car/:id", protect, canEditCar, carController.deleteCar);
 
 router.post(
-  "/cars/:carId/repairs",
+  "/cars/:id/repairs",
   protect,
   canEditCar,
   validateRepair,

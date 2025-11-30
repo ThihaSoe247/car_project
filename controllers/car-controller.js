@@ -103,6 +103,12 @@ const carController = {
       let imageObjs = [];
       let uploadedImageIds = []; // Track uploaded images for cleanup on failure
 
+      // Debug: Log file information
+      console.log("Files received:", req.files ? req.files.length : 0);
+      if (req.files && req.files.length > 0) {
+        console.log("Processing", req.files.length, "image(s)");
+      }
+
       if (req.files && req.files.length > 0) {
         try {
           const uploadedImages = await Promise.all(
@@ -116,6 +122,8 @@ const carController = {
             public_id: img.public_id,
           }));
           uploadedImageIds = imageObjs.map((img) => img.public_id);
+          
+          console.log("Successfully uploaded", imageObjs.length, "image(s)");
         } catch (uploadError) {
           // Clean up any images that were successfully uploaded before the failure
           // Note: Promise.all fails fast, so this cleanup handles partial uploads
@@ -123,11 +131,15 @@ const carController = {
           // If upload fails, imageObjs will be empty, so no cleanup needed
           throw new Error("Failed to upload images: " + uploadError.message);
         }
+      } else {
+        console.log("No images provided or req.files is empty");
       }
 
       // ✅ Create car with images in single save operation
       // This prevents the double-save issue and ensures atomicity
       try {
+        console.log("Creating car with", imageObjs.length, "image(s)");
+        
         const newCar = new Car({
           licenseNo: licenseNo?.trim().toUpperCase(),
           brand: brand?.trim(),
@@ -141,13 +153,20 @@ const carController = {
           purchaseDate: new Date(purchaseDate),
           kilo: parseFloat(kilo),
           wheelDrive,
-          images: imageObjs,
+          images: imageObjs, // ✅ Images are set here
           repairs: validatedRepairs,
         });
 
         await newCar.save();
+        
+        // Ensure images are included in the response
+        const carData = newCar.toObject({ virtuals: true });
+        console.log("Car created successfully with", carData.images?.length || 0, "image(s) in database");
+        if (carData.images && carData.images.length > 0) {
+          console.log("Image URLs:", carData.images.map(img => img.url));
+        }
 
-        res.status(201).json({ success: true, data: newCar });
+        res.status(201).json({ success: true, data: carData });
       } catch (saveError) {
         // ✅ Clean up uploaded images if car creation fails
         if (uploadedImageIds.length > 0) {

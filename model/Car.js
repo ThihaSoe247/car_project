@@ -123,6 +123,7 @@ const carSchema = new mongoose.Schema(
           public_id: { type: String, required: true },
         },
       ],
+      default: [],
       validate: {
         validator: function (arr) {
           return arr.length <= 20;
@@ -177,10 +178,6 @@ const carSchema = new mongoose.Schema(
       type: installmentSchema,
       default: null,
     },
-
-    // Legacy fields
-    resellPrice: { type: Number },
-    soldOutDate: { type: Date },
 
     repairs: {
       type: [repairSchema],
@@ -248,11 +245,6 @@ carSchema.pre("validate", function (next) {
     this.isAvailable = false;
   }
 
-  if (!sold && this.isAvailable === true) {
-    this.resellPrice = null;
-    this.soldOutDate = null;
-  }
-
   next();
 });
 
@@ -260,14 +252,9 @@ carSchema.pre("save", function (next) {
   if (this.sale) {
     this.isAvailable = false;
     this.boughtType = "Paid";
-    this.resellPrice = this.sale.price;
-    this.soldOutDate = this.sale.date;
   } else if (this.installment) {
     this.isAvailable = false;
     this.boughtType = "Installment";
-    this.resellPrice =
-      this.installment.downPayment + this.installment.remainingAmount;
-    this.soldOutDate = this.installment.startDate;
   }
 
   // if (this.isModified() && !this.updatedBy) {

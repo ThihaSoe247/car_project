@@ -139,6 +139,7 @@ const carController = {
       // This prevents the double-save issue and ensures atomicity
       try {
         console.log("Creating car with", imageObjs.length, "image(s)");
+        console.log("Image objects:", JSON.stringify(imageObjs, null, 2));
         
         const newCar = new Car({
           licenseNo: licenseNo?.trim().toUpperCase(),
@@ -153,17 +154,28 @@ const carController = {
           purchaseDate: new Date(purchaseDate),
           kilo: parseFloat(kilo),
           wheelDrive,
-          images: imageObjs, // ✅ Images are set here
           repairs: validatedRepairs,
         });
 
+        // ✅ Explicitly set images array to ensure it's saved
+        // Setting it after object creation ensures Mongoose properly tracks and saves the images field
+        newCar.images = imageObjs;
+        
+        // Mark images as modified to ensure they're saved (even for new documents)
+        newCar.markModified('images');
+
         await newCar.save();
         
+        // Reload the car from database to ensure we have the latest data
+        const savedCar = await Car.findById(newCar._id);
+        
         // Ensure images are included in the response
-        const carData = newCar.toObject({ virtuals: true });
+        const carData = savedCar.toObject({ virtuals: true });
         console.log("Car created successfully with", carData.images?.length || 0, "image(s) in database");
         if (carData.images && carData.images.length > 0) {
           console.log("Image URLs:", carData.images.map(img => img.url));
+        } else {
+          console.warn("WARNING: Car saved but images array is empty or missing!");
         }
 
         res.status(201).json({ success: true, data: carData });
@@ -995,14 +1007,35 @@ const carController = {
           .json({ success: false, message: "Invalid period" });
       }
 
-      // ✅ Filter by soldOutDate
+      // ✅ Filter by sale date or installment start date
       const cars = await Car.find({
-        soldOutDate: { $gte: startDate, $lte: now },
+        $or: [
+          { "sale.date": { $gte: startDate, $lte: now } },
+          { "installment.startDate": { $gte: startDate, $lte: now } },
+        ],
+        $and: [
+          { isAvailable: false },
+          { $or: [{ sale: { $exists: true, $ne: null } }, { installment: { $exists: true, $ne: null } }] },
+        ],
       });
 
       const report = cars.map((car) => {
         const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
-        const soldPrice = car.sale?.price || car.resellPrice || car.priceToSell;
+        
+        // Get sold price from sale or installment
+        let soldPrice = 0;
+        let soldDate = null;
+        
+        if (car.sale) {
+          soldPrice = car.sale.price;
+          soldDate = car.sale.date;
+        } else if (car.installment) {
+          soldPrice = car.installment.downPayment + car.installment.remainingAmount;
+          soldDate = car.installment.startDate;
+        } else {
+          // Fallback (shouldn't happen for sold cars)
+          soldPrice = car.priceToSell;
+        }
 
         const profit = soldPrice - car.purchasePrice - totalRepairs;
 
@@ -1013,7 +1046,7 @@ const carController = {
           soldPrice,
           totalRepairs,
           profit,
-          soldOutDate: car.soldOutDate,
+          soldOutDate: soldDate,
         };
       });
 

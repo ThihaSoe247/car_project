@@ -591,8 +591,7 @@ const carController = {
 
       const car = await Car.findById(carId)
         // .populate("createdBy", "name email")
-        // .populate("updatedBy", "name email")
-        .lean({ virtuals: true });
+        // .populate("updatedBy", "name email");
 
       if (!car) {
         return res.status(404).json({
@@ -601,9 +600,17 @@ const carController = {
         });
       }
 
+      // ✅ Convert to object with virtuals and ensure images are included
+      const carData = car.toObject({ virtuals: true });
+      
+      // Ensure images field is present (default to empty array if undefined)
+      if (!carData.images) {
+        carData.images = [];
+      }
+
       return res.status(200).json({
         success: true,
-        data: car,
+        data: carData,
       });
     } catch (error) {
       console.error("Error fetching car details:", error);

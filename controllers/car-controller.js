@@ -756,60 +756,86 @@ const carController = {
       
       // Step 1: Handle existingImages - determine which images to keep
       // This handles the case where user removes some images from frontend
-      if (updates.existingImages !== undefined && updates.existingImages !== null) {
+      // existingImages can be: array of public_ids, JSON string, empty array (remove all), or undefined (keep all)
+      const hasExistingImagesParam = updates.existingImages !== undefined;
+      
+      if (hasExistingImagesParam) {
         let keep = [];
         
+        // Handle empty array case (remove all images)
+        if (Array.isArray(updates.existingImages) && updates.existingImages.length === 0) {
+          keep = [];
+        }
         // Parse existingImages - handle both array and JSON string formats
-        if (typeof updates.existingImages === 'string') {
-          try {
-            const parsed = JSON.parse(updates.existingImages);
-            keep = Array.isArray(parsed) ? parsed : [parsed];
-          } catch (e) {
-            // If parsing fails, treat as single value
-            keep = updates.existingImages !== '' ? [updates.existingImages] : [];
+        else if (typeof updates.existingImages === 'string') {
+          // Handle empty string
+          if (updates.existingImages.trim() === '' || updates.existingImages === '[]') {
+            keep = [];
+          } else {
+            try {
+              const parsed = JSON.parse(updates.existingImages);
+              keep = Array.isArray(parsed) ? parsed : [parsed];
+            } catch (e) {
+              // If parsing fails, treat as single value
+              keep = [updates.existingImages];
+            }
           }
         } else if (Array.isArray(updates.existingImages)) {
           keep = updates.existingImages;
-        } else if (updates.existingImages !== '') {
+        } else if (updates.existingImages !== null && updates.existingImages !== '') {
           keep = [updates.existingImages];
         }
 
-        console.log(`Images to keep (public_ids):`, keep);
+        console.log(`existingImages parameter received:`, updates.existingImages);
+        console.log(`Parsed images to keep (public_ids):`, keep);
         console.log(`Current car images (public_ids):`, car.images.map(img => img.public_id));
 
         // Normalize keep list - extract public_id if objects are sent instead of just IDs
         const keepPublicIds = keep.map(item => {
-          if (typeof item === 'object' && item.public_id) {
-            return item.public_id;
+          if (typeof item === 'object' && item !== null && item.public_id) {
+            return String(item.public_id);
           }
           return String(item); // Ensure it's a string for comparison
-        });
+        }).filter(id => id && id !== 'null' && id !== 'undefined'); // Remove invalid values
+
+        console.log(`Normalized keepPublicIds:`, keepPublicIds);
 
         // Find images to delete (images not in the keep list)
         const toDelete = car.images.filter(
           (img) => !keepPublicIds.includes(String(img.public_id))
         );
 
-        console.log(`Images to delete: ${toDelete.length}`, toDelete.map(img => img.public_id));
+        console.log(`Images to delete: ${toDelete.length}`, toDelete.map(img => ({ public_id: img.public_id, url: img.url })));
 
         // Delete removed images from Cloudinary
         if (toDelete.length > 0) {
-          console.log(`Removing ${toDelete.length} image(s) from Cloudinary`);
-          await Promise.all(
-            toDelete.map((img) =>
-              cloudinary.uploader.destroy(img.public_id).catch((err) => {
-                console.error(`Failed to delete image ${img.public_id}:`, err);
-                // Continue even if deletion fails
-              })
-            )
+          console.log(`Removing ${toDelete.length} image(s) from Cloudinary...`);
+          const deleteResults = await Promise.allSettled(
+            toDelete.map((img) => cloudinary.uploader.destroy(img.public_id))
           );
-          console.log(`Successfully deleted ${toDelete.length} image(s) from Cloudinary`);
+          
+          const successful = deleteResults.filter(r => r.status === 'fulfilled').length;
+          const failed = deleteResults.filter(r => r.status === 'rejected').length;
+          
+          deleteResults.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.error(`Failed to delete image ${toDelete[index].public_id}:`, result.reason);
+            }
+          });
+          
+          console.log(`Cloudinary deletion: ${successful} successful, ${failed} failed`);
+        } else if (keepPublicIds.length === 0 && car.images.length > 0) {
+          // All images should be removed
+          console.log(`Removing ALL ${car.images.length} image(s) from Cloudinary (empty keep list)`);
+          await Promise.allSettled(
+            car.images.map((img) => cloudinary.uploader.destroy(img.public_id))
+          );
         }
 
         // Start with only the images that should be kept
         // If keep is empty array, all images were removed
         finalImages = car.images.filter((img) => keepPublicIds.includes(String(img.public_id)));
-        console.log(`Keeping ${finalImages.length} existing image(s) out of ${car.images.length} original`);
+        console.log(`Final images after removal: ${finalImages.length} (kept ${finalImages.length} out of ${car.images.length} original)`);
       }
 
       // Step 2: Handle new file uploads
@@ -854,11 +880,15 @@ const carController = {
       }
 
       // Step 3: Save final images (update if images were modified)
-      const imagesModified = updates.existingImages !== undefined || (req.files && req.files.length > 0);
+      // Always update if existingImages was provided (even if empty) or if new files were uploaded
+      const imagesModified = hasExistingImagesParam || (req.files && req.files.length > 0);
       if (imagesModified) {
         car.images = finalImages;
         car.markModified('images');
-        console.log(`Final images count: ${finalImages.length}`);
+        console.log(`Saving car with ${finalImages.length} image(s) in database`);
+        console.log(`Image URLs in database:`, finalImages.map(img => img.url));
+      } else {
+        console.log(`No image modifications detected - keeping existing ${car.images?.length || 0} image(s)`);
       }
 
       // Handle repairs array (replace entire array if provided)
@@ -936,13 +966,28 @@ const carController = {
       if (updates.priceToSell !== undefined) car.priceToSell = parseFloat(updates.priceToSell);
       if (updates.licenseNo !== undefined) car.licenseNo = String(updates.licenseNo).trim().toUpperCase();
 
+      // Verify images before save
+      console.log(`About to save car with ${car.images?.length || 0} image(s)`);
+      if (car.images && car.images.length > 0) {
+        console.log(`Images to be saved:`, car.images.map(img => ({ public_id: img.public_id, url: img.url })));
+      }
+
       const updated = await car.save({ session });
       await session.commitTransaction();
+
+      // Reload from database to ensure we have the latest data
+      const savedCar = await Car.findById(car._id);
+      const carData = savedCar.toObject({ virtuals: true });
+      
+      console.log(`Car saved successfully with ${carData.images?.length || 0} image(s) in database`);
+      if (carData.images && carData.images.length > 0) {
+        console.log(`Final image URLs in response:`, carData.images.map(img => img.url));
+      }
 
       res.status(200).json({
         success: true,
         message: "Car updated successfully",
-        car: updated.toObject({ virtuals: true }),
+        car: carData,
       });
     } catch (error) {
       await session.abortTransaction();

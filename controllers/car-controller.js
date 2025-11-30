@@ -740,11 +740,35 @@ const carController = {
       }
 
       // Handle images
-      // Start with existing images (preserve them by default)
+      // Behavior:
+      // - If new files are uploaded: By default, REPLACE all old images with new ones (delete old from Cloudinary)
+      // - If replaceImages: false is set: Add new images to existing ones (append mode)
+      // - If existingImages is provided (without new files): Keep only the specified existing images
       let finalImages = car.images || [];
 
-      // 1. Keep only images still selected on frontend (if provided)
-      if (updates.existingImages !== undefined) {
+      // Check if user wants to replace images (default: true - replace old images when uploading new ones)
+      const replaceImages = updates.replaceImages !== false; // Default to true unless explicitly set to false
+      
+      // 1. If new files are uploaded and we're replacing, delete all old images first
+      if (req.files && req.files.length > 0 && replaceImages) {
+        // Delete all existing images from Cloudinary
+        if (car.images && car.images.length > 0) {
+          console.log(`Replacing ${car.images.length} old image(s) with ${req.files.length} new image(s)`);
+          await Promise.all(
+            car.images.map((img) =>
+              cloudinary.uploader.destroy(img.public_id).catch((err) => {
+                console.error(`Failed to delete old image ${img.public_id}:`, err);
+                // Continue even if deletion fails
+              })
+            )
+          );
+        }
+        // Start fresh with new images only
+        finalImages = [];
+      }
+
+      // 2. Keep only images still selected on frontend (if provided and not replacing)
+      if (updates.existingImages !== undefined && !(req.files && req.files.length > 0 && replaceImages)) {
         const keep = Array.isArray(updates.existingImages)
           ? updates.existingImages
           : [updates.existingImages];
@@ -754,14 +778,20 @@ const carController = {
         );
 
         // Delete from Cloudinary
-        await Promise.all(
-          toDelete.map((img) => cloudinary.uploader.destroy(img.public_id))
-        );
+        if (toDelete.length > 0) {
+          await Promise.all(
+            toDelete.map((img) =>
+              cloudinary.uploader.destroy(img.public_id).catch((err) => {
+                console.error(`Failed to delete image ${img.public_id}:`, err);
+              })
+            )
+          );
+        }
 
         finalImages = car.images.filter((img) => keep.includes(img.public_id));
       }
 
-      // 2. Upload new files
+      // 3. Upload new files
       if (req.files && req.files.length > 0) {
         const uploaded = await Promise.all(
           req.files.map((file) =>
@@ -769,17 +799,28 @@ const carController = {
           )
         );
 
-        finalImages.push(
-          ...uploaded.map((img) => ({
+        // If replacing, set to new images only; otherwise, add to existing
+        if (replaceImages) {
+          finalImages = uploaded.map((img) => ({
             url: img.secure_url,
             public_id: img.public_id,
-          }))
-        );
+          }));
+        } else {
+          finalImages.push(
+            ...uploaded.map((img) => ({
+              url: img.secure_url,
+              public_id: img.public_id,
+            }))
+          );
+        }
+        
+        console.log(`Uploaded ${uploaded.length} new image(s)`);
       }
 
       // Save final images (only update if images were actually modified)
       if (updates.existingImages !== undefined || (req.files && req.files.length > 0)) {
         car.images = finalImages;
+        car.markModified('images');
       }
 
       // Handle repairs array (replace entire array if provided)

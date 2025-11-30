@@ -458,13 +458,12 @@ const carController = {
           Number(installment.downPayment) + Number(installment.remainingAmount);
       }
 
-      // === Calculate profit ===
-      const totalRepairCost = (car.repairs || []).reduce(
-        (sum, r) => sum + (r.cost || 0),
-        0
-      );
-      car.profit = finalSalePrice - (car.purchasePrice + totalRepairCost);
-      car.totalRepairCost = totalRepairCost;
+      // === Ensure isAvailable is set to false ===
+      // Explicitly set isAvailable to false to ensure it's saved
+      car.isAvailable = false;
+
+      // Note: profit and totalRepairCost are virtual fields, they will be calculated automatically
+      // No need to set them directly
 
       const updated = await car.save({ session });
       await session.commitTransaction();

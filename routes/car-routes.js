@@ -43,8 +43,8 @@ router.post(
   "/create-car",
   protect,
   canAddCarInfo,
+  upload.array("images", 10),
   validateCarCreation, // ✅ Validate BEFORE file upload
-  upload.array("images", 10), // ✅ Upload after validation
   carController.createCar
 );
 
@@ -60,8 +60,8 @@ router.put(
   "/car/:id/edit",
   protect,
   canEditCar,
-  validateRepairsArray, // ✅ Validate BEFORE file upload
-  upload.array("images", 10), // ✅ Upload after validation
+  upload.array("images", 10),
+  validateRepairsArray, // ✅ Validate BEFORE file uploadd after validation
   carController.editCar
 );
 

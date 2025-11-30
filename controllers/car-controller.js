@@ -741,86 +741,124 @@ const carController = {
 
       // Handle images
       // Behavior:
-      // - If new files are uploaded: By default, REPLACE all old images with new ones (delete old from Cloudinary)
-      // - If replaceImages: false is set: Add new images to existing ones (append mode)
-      // - If existingImages is provided (without new files): Keep only the specified existing images
+      // - If existingImages is provided: Keep only those images (delete others from Cloudinary)
+      // - If new files are uploaded AND replaceImages is true (default): Replace all old images with new ones
+      // - If new files are uploaded AND replaceImages is false: Add new images to existing ones
       let finalImages = car.images || [];
+
+      // Debug: Log current state
+      console.log(`Current car has ${car.images?.length || 0} image(s)`);
+      console.log(`existingImages received:`, updates.existingImages);
+      console.log(`New files to upload:`, req.files?.length || 0);
 
       // Check if user wants to replace images (default: true - replace old images when uploading new ones)
       const replaceImages = updates.replaceImages !== false; // Default to true unless explicitly set to false
       
-      // 1. If new files are uploaded and we're replacing, delete all old images first
-      if (req.files && req.files.length > 0 && replaceImages) {
-        // Delete all existing images from Cloudinary
-        if (car.images && car.images.length > 0) {
-          console.log(`Replacing ${car.images.length} old image(s) with ${req.files.length} new image(s)`);
+      // Step 1: Handle existingImages - determine which images to keep
+      // This handles the case where user removes some images from frontend
+      if (updates.existingImages !== undefined && updates.existingImages !== null) {
+        let keep = [];
+        
+        // Parse existingImages - handle both array and JSON string formats
+        if (typeof updates.existingImages === 'string') {
+          try {
+            const parsed = JSON.parse(updates.existingImages);
+            keep = Array.isArray(parsed) ? parsed : [parsed];
+          } catch (e) {
+            // If parsing fails, treat as single value
+            keep = updates.existingImages !== '' ? [updates.existingImages] : [];
+          }
+        } else if (Array.isArray(updates.existingImages)) {
+          keep = updates.existingImages;
+        } else if (updates.existingImages !== '') {
+          keep = [updates.existingImages];
+        }
+
+        console.log(`Images to keep (public_ids):`, keep);
+        console.log(`Current car images (public_ids):`, car.images.map(img => img.public_id));
+
+        // Normalize keep list - extract public_id if objects are sent instead of just IDs
+        const keepPublicIds = keep.map(item => {
+          if (typeof item === 'object' && item.public_id) {
+            return item.public_id;
+          }
+          return String(item); // Ensure it's a string for comparison
+        });
+
+        // Find images to delete (images not in the keep list)
+        const toDelete = car.images.filter(
+          (img) => !keepPublicIds.includes(String(img.public_id))
+        );
+
+        console.log(`Images to delete: ${toDelete.length}`, toDelete.map(img => img.public_id));
+
+        // Delete removed images from Cloudinary
+        if (toDelete.length > 0) {
+          console.log(`Removing ${toDelete.length} image(s) from Cloudinary`);
           await Promise.all(
-            car.images.map((img) =>
+            toDelete.map((img) =>
+              cloudinary.uploader.destroy(img.public_id).catch((err) => {
+                console.error(`Failed to delete image ${img.public_id}:`, err);
+                // Continue even if deletion fails
+              })
+            )
+          );
+          console.log(`Successfully deleted ${toDelete.length} image(s) from Cloudinary`);
+        }
+
+        // Start with only the images that should be kept
+        // If keep is empty array, all images were removed
+        finalImages = car.images.filter((img) => keepPublicIds.includes(String(img.public_id)));
+        console.log(`Keeping ${finalImages.length} existing image(s) out of ${car.images.length} original`);
+      }
+
+      // Step 2: Handle new file uploads
+      if (req.files && req.files.length > 0) {
+        // If replacing (default behavior), delete all remaining old images before uploading new ones
+        if (replaceImages && finalImages.length > 0) {
+          console.log(`Replacing ${finalImages.length} old image(s) with ${req.files.length} new image(s)`);
+          await Promise.all(
+            finalImages.map((img) =>
               cloudinary.uploader.destroy(img.public_id).catch((err) => {
                 console.error(`Failed to delete old image ${img.public_id}:`, err);
                 // Continue even if deletion fails
               })
             )
           );
-        }
-        // Start fresh with new images only
-        finalImages = [];
-      }
-
-      // 2. Keep only images still selected on frontend (if provided and not replacing)
-      if (updates.existingImages !== undefined && !(req.files && req.files.length > 0 && replaceImages)) {
-        const keep = Array.isArray(updates.existingImages)
-          ? updates.existingImages
-          : [updates.existingImages];
-
-        const toDelete = car.images.filter(
-          (img) => !keep.includes(img.public_id)
-        );
-
-        // Delete from Cloudinary
-        if (toDelete.length > 0) {
-          await Promise.all(
-            toDelete.map((img) =>
-              cloudinary.uploader.destroy(img.public_id).catch((err) => {
-                console.error(`Failed to delete image ${img.public_id}:`, err);
-              })
-            )
-          );
+          // Clear old images since we're replacing
+          finalImages = [];
         }
 
-        finalImages = car.images.filter((img) => keep.includes(img.public_id));
-      }
-
-      // 3. Upload new files
-      if (req.files && req.files.length > 0) {
+        // Upload new files
         const uploaded = await Promise.all(
           req.files.map((file) =>
             streamUpload(file.buffer, `car-showroom/${car._id}`)
           )
         );
 
-        // If replacing, set to new images only; otherwise, add to existing
+        // Add new images to finalImages
+        const newImageObjs = uploaded.map((img) => ({
+          url: img.secure_url,
+          public_id: img.public_id,
+        }));
+
         if (replaceImages) {
-          finalImages = uploaded.map((img) => ({
-            url: img.secure_url,
-            public_id: img.public_id,
-          }));
+          // Replace mode: only new images
+          finalImages = newImageObjs;
         } else {
-          finalImages.push(
-            ...uploaded.map((img) => ({
-              url: img.secure_url,
-              public_id: img.public_id,
-            }))
-          );
+          // Append mode: add to existing
+          finalImages.push(...newImageObjs);
         }
         
         console.log(`Uploaded ${uploaded.length} new image(s)`);
       }
 
-      // Save final images (only update if images were actually modified)
-      if (updates.existingImages !== undefined || (req.files && req.files.length > 0)) {
+      // Step 3: Save final images (update if images were modified)
+      const imagesModified = updates.existingImages !== undefined || (req.files && req.files.length > 0);
+      if (imagesModified) {
         car.images = finalImages;
         car.markModified('images');
+        console.log(`Final images count: ${finalImages.length}`);
       }
 
       // Handle repairs array (replace entire array if provided)

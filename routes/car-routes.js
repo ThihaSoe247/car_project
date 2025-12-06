@@ -10,7 +10,10 @@ const upload = require("../cloud/upload");
 
 const {
   validateCarCreation,
-  validateCarSale,
+  validatePaidSale,
+  validateInstallmentSale,
+  validateInstallmentUpdate,
+  validateInstallmentPayment,
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,
@@ -48,12 +51,22 @@ router.post(
   carController.createCar
 );
 
+// Mark car as sold via Paid payment
 router.put(
   "/car/:id/sell",
   protect,
   canMarkAsSold,
-  validateCarSale,
-  carController.markAsSold
+  validatePaidSale,
+  carController.markAsPaid
+);
+
+// Mark car as sold via Installment payment
+router.put(
+  "/car/:id/sell-installment",
+  protect,
+  canMarkAsSold,
+  validateInstallmentSale,
+  carController.markAsInstallment
 );
 
 router.put(
@@ -71,6 +84,24 @@ router.put(
   canEditCar,
   validateSaleUpdate,
   carController.editSaleInfo
+);
+
+// Edit installment information
+router.put(
+  "/car/:id/edit-installment",
+  protect,
+  canEditCar,
+  validateInstallmentUpdate,
+  carController.editInstallmentInfo
+);
+
+// Add payment to installment
+router.post(
+  "/car/:id/installment/payment",
+  protect,
+  canEditCar,
+  validateInstallmentPayment,
+  carController.addInstallmentPayment
 );
 
 router.delete("/car/:id", protect, canEditCar, carController.deleteCar);

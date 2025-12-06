@@ -419,19 +419,28 @@ const carController = {
       next(err);
     }
   },
-  markAsSold: async (req, res) => {
+  // Mark car as sold via Paid payment
+  markAsPaid: async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
       const carId = sanitizeId(req.params.id);
-      const { boughtType } = req.body;
+      const { sale } = req.body;
 
-      if (!boughtType || !["Paid", "Installment"].includes(boughtType)) {
+      if (
+        !sale ||
+        !sale.price ||
+        !sale.soldDate ||
+        !sale.kiloAtSale ||
+        !sale.buyer?.name ||
+        !sale.buyer?.passport
+      ) {
         await session.abortTransaction();
         return res.status(400).json({
           success: false,
-          message: "boughtType must be either 'Paid' or 'Installment'",
+          message:
+            "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name, sale.buyer.passport",
         });
       }
 
@@ -452,160 +461,177 @@ const carController = {
         });
       }
 
-      let finalSalePrice = 0;
+      // ✅ Validate number conversions to prevent NaN
+      const salePrice = Number(sale.price);
+      const kiloAtSaleNum = Number(sale.kiloAtSale);
 
-      // === Paid ===
-      if (boughtType === "Paid") {
-        const { sale } = req.body;
-        if (
-          !sale ||
-          !sale.price ||
-          !sale.soldDate ||
-          !sale.kiloAtSale ||
-          !sale.buyer?.name ||
-          !sale.buyer?.passport
-        ) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message:
-              "Required: sale.price, sale.soldDate, sale.kiloAtSale, sale.buyer.name, sale.buyer.passport",
-          });
-        }
-
-        // ✅ Validate number conversions to prevent NaN
-        const salePrice = Number(sale.price);
-        const kiloAtSaleNum = Number(sale.kiloAtSale);
-        
-        if (isNaN(salePrice) || salePrice <= 0) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "sale.price must be a valid positive number",
-          });
-        }
-
-        if (isNaN(kiloAtSaleNum) || kiloAtSaleNum < 0) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "sale.kiloAtSale must be a valid non-negative number",
-          });
-        }
-
-        // ✅ Validate date is not null
-        const saleDate = toDate(sale.soldDate);
-        if (!saleDate) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "sale.soldDate must be a valid date",
-          });
-        }
-
-        car.markAsPaid({
-          price: salePrice,
-          date: saleDate,
-          kiloAtSale: kiloAtSaleNum,
-          buyer: sale.buyer,
-          updatedBy: req.user.userId,
+      if (isNaN(salePrice) || salePrice <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "sale.price must be a valid positive number",
         });
-
-        finalSalePrice = salePrice;
-
-        // === Installment ===
-      } else if (boughtType === "Installment") {
-        const { installment } = req.body;
-        if (
-          !installment ||
-          !installment.downPayment ||
-          !installment.remainingAmount ||
-          !installment.months ||
-          !installment.buyer?.name ||
-          !installment.buyer?.passport
-        ) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message:
-              "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name, installment.buyer.passport",
-          });
-        }
-
-        // ✅ Validate number conversions to prevent NaN
-        const downPayment = Number(installment.downPayment);
-        const remainingAmount = Number(installment.remainingAmount);
-        const months = Number(installment.months);
-
-        if (isNaN(downPayment) || downPayment < 0) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "installment.downPayment must be a valid non-negative number",
-          });
-        }
-
-        if (isNaN(remainingAmount) || remainingAmount < 0) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "installment.remainingAmount must be a valid non-negative number",
-          });
-        }
-
-        if (isNaN(months) || months < 1 || !Number.isInteger(months)) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: "installment.months must be a valid positive integer",
-          });
-        }
-
-        // ✅ Validate startDate if provided
-        let startDate = new Date();
-        if (installment.startDate) {
-          const parsedStartDate = toDate(installment.startDate);
-          if (!parsedStartDate) {
-            await session.abortTransaction();
-            return res.status(400).json({
-              success: false,
-              message: "installment.startDate must be a valid date",
-            });
-          }
-          startDate = parsedStartDate;
-        }
-
-        car.markAsInstallment({
-          downPayment,
-          remainingAmount,
-          months,
-          buyer: installment.buyer,
-          startDate,
-          updatedBy: req.user.userId,
-        });
-
-        // Total price = downPayment + remaining
-        finalSalePrice = downPayment + remainingAmount;
       }
 
+      if (isNaN(kiloAtSaleNum) || kiloAtSaleNum < 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "sale.kiloAtSale must be a valid non-negative number",
+        });
+      }
+
+      // ✅ Validate date is not null
+      const saleDate = toDate(sale.soldDate);
+      if (!saleDate) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "sale.soldDate must be a valid date",
+        });
+      }
+
+      car.markAsPaid({
+        price: salePrice,
+        date: saleDate,
+        kiloAtSale: kiloAtSaleNum,
+        buyer: sale.buyer,
+        updatedBy: req.user.userId,
+      });
+
       // === Ensure isAvailable is set to false ===
-      // Explicitly set isAvailable to false to ensure it's saved
       car.isAvailable = false;
 
       // Note: profit and totalRepairCost are virtual fields, they will be calculated automatically
-      // No need to set them directly
-
       const updated = await car.save({ session });
       await session.commitTransaction();
 
       return res.status(200).json({
         success: true,
-        message: `Car marked as sold via ${boughtType}`,
+        message: "Car marked as sold via Paid payment",
         car: updated.toObject({ virtuals: true }),
       });
     } catch (error) {
       await session.abortTransaction();
-      console.error("Error marking car as sold:", error);
+      console.error("Error marking car as paid:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to update car",
+      });
+    } finally {
+      session.endSession();
+    }
+  },
+
+  // Mark car as sold via Installment payment
+  markAsInstallment: async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const carId = sanitizeId(req.params.id);
+      const { installment } = req.body;
+
+      if (
+        !installment ||
+        !installment.downPayment ||
+        !installment.remainingAmount ||
+        !installment.months ||
+        !installment.buyer?.name ||
+        !installment.buyer?.passport
+      ) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message:
+            "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name, installment.buyer.passport",
+        });
+      }
+
+      const car = await Car.findById(carId).session(session);
+      if (!car) {
+        await session.abortTransaction();
+        return res.status(404).json({
+          success: false,
+          message: "Car not found",
+        });
+      }
+
+      if (!car.isAvailable) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Car is already marked as sold",
+        });
+      }
+
+      // ✅ Validate number conversions to prevent NaN
+      const downPayment = Number(installment.downPayment);
+      const remainingAmount = Number(installment.remainingAmount);
+      const months = Number(installment.months);
+
+      if (isNaN(downPayment) || downPayment < 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "installment.downPayment must be a valid non-negative number",
+        });
+      }
+
+      if (isNaN(remainingAmount) || remainingAmount < 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "installment.remainingAmount must be a valid non-negative number",
+        });
+      }
+
+      if (isNaN(months) || months < 1 || !Number.isInteger(months)) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "installment.months must be a valid positive integer",
+        });
+      }
+
+      // ✅ Validate startDate if provided
+      let startDate = new Date();
+      if (installment.startDate) {
+        const parsedStartDate = toDate(installment.startDate);
+        if (!parsedStartDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "installment.startDate must be a valid date",
+          });
+        }
+        startDate = parsedStartDate;
+      }
+
+      car.markAsInstallment({
+        downPayment,
+        remainingAmount,
+        months,
+        buyer: installment.buyer,
+        startDate,
+        updatedBy: req.user.userId,
+      });
+
+      // === Ensure isAvailable is set to false ===
+      car.isAvailable = false;
+
+      // Note: profit and totalRepairCost are virtual fields, they will be calculated automatically
+      const updated = await car.save({ session });
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Car marked as sold via Installment payment",
+        car: updated.toObject({ virtuals: true }),
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      console.error("Error marking car as installment:", error);
       return res.status(500).json({
         success: false,
         message: error.message || "Failed to update car",
@@ -1110,8 +1136,241 @@ const carController = {
       session.endSession();
     }
   },
-  // controllers/car-controller.js
-  // controllers/car-controller.js
+
+  // Edit installment information
+  editInstallmentInfo: async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const carId = sanitizeId(req.params.id);
+      const car = await Car.findById(carId).session(session);
+
+      if (!car || !car.installment) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Car not sold on installment or not found",
+        });
+      }
+
+      const {
+        buyer,
+        downPayment,
+        remainingAmount,
+        months,
+        startDate,
+      } = req.body;
+
+      // ✅ Validate and update buyer information
+      if (buyer) {
+        if (!buyer.passport) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "buyer.passport is required when updating buyer information",
+          });
+        }
+        if (buyer.name) car.installment.buyer.name = buyer.name;
+        if (buyer.phone) car.installment.buyer.phone = buyer.phone;
+        if (buyer.email) car.installment.buyer.email = buyer.email;
+        car.installment.buyer.passport = buyer.passport;
+      }
+
+      // ✅ Validate and update downPayment
+      if (downPayment != null) {
+        const downPaymentNum = Number(downPayment);
+        if (isNaN(downPaymentNum) || downPaymentNum < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "downPayment must be a valid non-negative number",
+          });
+        }
+        car.installment.downPayment = downPaymentNum;
+      }
+
+      // ✅ Validate and update remainingAmount
+      if (remainingAmount != null) {
+        const remainingAmountNum = Number(remainingAmount);
+        if (isNaN(remainingAmountNum) || remainingAmountNum < 0) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "remainingAmount must be a valid non-negative number",
+          });
+        }
+        car.installment.remainingAmount = remainingAmountNum;
+      }
+
+      // ✅ Validate and update months
+      if (months != null) {
+        const monthsNum = Number(months);
+        if (
+          isNaN(monthsNum) ||
+          monthsNum < 1 ||
+          !Number.isInteger(monthsNum)
+        ) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "months must be a valid positive integer",
+          });
+        }
+        car.installment.months = monthsNum;
+      }
+
+      // ✅ Validate and update startDate
+      if (startDate) {
+        const parsedStartDate = toDate(startDate);
+        if (!parsedStartDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "startDate must be a valid date",
+          });
+        }
+        car.installment.startDate = parsedStartDate;
+      }
+
+      // Mark installment as modified
+      car.markModified("installment");
+
+      const updated = await car.save({ session });
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Installment info updated successfully",
+        car: updated.toObject({ virtuals: true }),
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      console.error("Failed to edit installment info:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to edit installment info",
+      });
+    } finally {
+      session.endSession();
+    }
+  },
+
+  // Add payment to installment
+  addInstallmentPayment: async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const carId = sanitizeId(req.params.id);
+      const { amount, paymentDate, notes } = req.body;
+
+      if (!amount) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount is required",
+        });
+      }
+
+      const car = await Car.findById(carId).session(session);
+      if (!car || !car.installment) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Car not sold on installment or not found",
+        });
+      }
+
+      // Validate payment amount
+      const paymentAmount = Number(amount);
+      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount must be a valid positive number",
+        });
+      }
+
+      if (paymentAmount > car.installment.remainingAmount) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: `Payment amount (${paymentAmount}) exceeds remaining amount (${car.installment.remainingAmount})`,
+        });
+      }
+
+      // Validate payment date if provided
+      let parsedPaymentDate = new Date();
+      if (paymentDate) {
+        parsedPaymentDate = toDate(paymentDate);
+        if (!parsedPaymentDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "paymentDate must be a valid date",
+          });
+        }
+      }
+
+      // Add payment using instance method
+      try {
+        car.addInstallmentPayment(
+          paymentAmount,
+          parsedPaymentDate,
+          notes || ""
+        );
+      } catch (error) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      // Mark installment as modified
+      car.markModified("installment");
+      car.markModified("installment.paymentHistory");
+
+      const updated = await car.save({ session });
+      await session.commitTransaction();
+
+      // Calculate payment summary
+      const paymentHistoryTotal = (
+        updated.installment.paymentHistory || []
+      ).reduce((sum, p) => sum + (p.amount || 0), 0);
+      const paidAmount =
+        (updated.installment.downPayment || 0) + paymentHistoryTotal;
+      const totalAmount =
+        (updated.installment.downPayment || 0) +
+        (updated.installment.remainingAmount || 0) +
+        paymentHistoryTotal;
+      const paymentProgress = totalAmount > 0 ? (paidAmount / totalAmount) * 100 : 0;
+
+      return res.status(200).json({
+        success: true,
+        message: "Payment recorded successfully",
+        car: updated.toObject({ virtuals: true }),
+        paymentSummary: {
+          paymentAmount,
+          remainingAmount: updated.installment.remainingAmount,
+          paidAmount,
+          totalAmount,
+          paymentProgress: Math.min(paymentProgress, 100),
+          isFullyPaid: updated.installment.remainingAmount <= 0,
+        },
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      console.error("Failed to add installment payment:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to add payment",
+      });
+    } finally {
+      session.endSession();
+    }
+  },
 
   getProfitAnalysis: async (req, res) => {
     try {

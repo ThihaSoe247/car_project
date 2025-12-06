@@ -53,6 +53,15 @@ const saleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const paymentHistorySchema = new mongoose.Schema(
+  {
+    amount: { type: Number, required: true, min: 0 },
+    paymentDate: { type: Date, required: true, default: Date.now },
+    notes: { type: String, trim: true, maxlength: 500 },
+  },
+  { _id: true, timestamps: true }
+);
+
 const installmentSchema = new mongoose.Schema(
   {
     downPayment: { type: Number, required: true, min: 0 },
@@ -60,6 +69,7 @@ const installmentSchema = new mongoose.Schema(
     months: { type: Number, required: true, min: 1 },
     buyer: { type: buyerSchema, required: true },
     startDate: { type: Date, required: true, default: Date.now },
+    paymentHistory: { type: [paymentHistorySchema], default: [] },
   },
   { _id: false }
 );
@@ -216,9 +226,14 @@ carSchema.virtual("profit").get(function () {
 
   // Case 2: Installment sale
   if (this.installment && this.purchasePrice != null) {
-    const totalInstallment =
-      (this.installment.downPayment || 0) +
-      (this.installment.remainingAmount || 0);
+    // For installment sales, `remainingAmount` represents the total remaining
+    // amount to be paid (not the monthly installment). The total incoming
+    // amount from the buyer is therefore:
+    //   downPayment + remainingAmount
+    const downPayment = this.installment.downPayment || 0;
+    const remainingAmount = this.installment.remainingAmount || 0;
+
+    const totalInstallment = downPayment + remainingAmount;
     return totalInstallment - (this.purchasePrice + totalRepairs);
   }
 
@@ -228,6 +243,53 @@ carSchema.virtual("profit").get(function () {
 carSchema.virtual("status").get(function () {
   if (!this.isAvailable) return "Inactive";
   return "Active";
+});
+
+// =======================
+// Installment Payment Tracking Virtuals
+// =======================
+carSchema.virtual("installmentPaidAmount").get(function () {
+  if (!this.installment) return null;
+  const paymentHistoryTotal =
+    (this.installment.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.amount || 0),
+      0
+    );
+  return (this.installment.downPayment || 0) + paymentHistoryTotal;
+});
+
+carSchema.virtual("installmentTotalAmount").get(function () {
+  if (!this.installment) return null;
+  // Total amount = downPayment + current remainingAmount + all payments made
+  // This equals the original total (downPayment + original remainingAmount)
+  const paymentHistoryTotal =
+    (this.installment.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.amount || 0),
+      0
+    );
+  return (
+    (this.installment.downPayment || 0) +
+    (this.installment.remainingAmount || 0) +
+    paymentHistoryTotal
+  );
+});
+
+carSchema.virtual("installmentPaymentProgress").get(function () {
+  if (!this.installment) return null;
+  const total = this.installmentTotalAmount || 0;
+  const paid = this.installmentPaidAmount || 0;
+  if (total === 0) return 0;
+  return Math.min((paid / total) * 100, 100);
+});
+
+carSchema.virtual("installmentMonthlyPayment").get(function () {
+  if (!this.installment || !this.installment.months) return null;
+  return (this.installment.remainingAmount || 0) / this.installment.months;
+});
+
+carSchema.virtual("installmentIsFullyPaid").get(function () {
+  if (!this.installment) return null;
+  return (this.installment.remainingAmount || 0) <= 0;
 });
 
 // carSchema.virtual("daysInInventory").get(function () {
@@ -329,6 +391,39 @@ carSchema.methods.relist = function (updatedBy) {
   this.boughtType = null;
   this.isAvailable = true;
   // this.updatedBy = updatedBy;
+};
+
+// Add payment to installment
+carSchema.methods.addInstallmentPayment = function (amount, paymentDate, notes) {
+  if (!this.installment) {
+    throw new Error("Car is not sold on installment");
+  }
+
+  const paymentAmount = Number(amount);
+  if (isNaN(paymentAmount) || paymentAmount <= 0) {
+    throw new Error("Payment amount must be a valid positive number");
+  }
+
+  if (paymentAmount > this.installment.remainingAmount) {
+    throw new Error(
+      `Payment amount (${paymentAmount}) exceeds remaining amount (${this.installment.remainingAmount})`
+    );
+  }
+
+  // Add payment to history
+  this.installment.paymentHistory.push({
+    amount: paymentAmount,
+    paymentDate: paymentDate || new Date(),
+    notes: notes || "",
+  });
+
+  // Update remaining amount
+  this.installment.remainingAmount = Math.max(
+    0,
+    this.installment.remainingAmount - paymentAmount
+  );
+
+  return this;
 };
 
 // =======================

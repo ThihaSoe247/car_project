@@ -187,6 +187,61 @@ const validateCarCreation = [
     .withMessage("Each repair cost must be a positive number"),
   handleValidationErrors,
 ];
+// Paid sale validation (for /api/car/:id/sell)
+const validatePaidSale = [
+  body("sale.price")
+    .isFloat({ min: 0 })
+    .withMessage("Sale price must be a positive number"),
+  body("sale.soldDate")
+    .isISO8601()
+    .withMessage("Please provide a valid sale date"),
+  body("sale.kiloAtSale")
+    .isFloat({ min: 0 })
+    .withMessage("Kilometer at sale must be a positive number"),
+  body("sale.buyer.name")
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Buyer name is required"),
+  body("sale.buyer.email")
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid buyer email"),
+  body("sale.buyer.passport")
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Buyer passport is required and must be 5-20 characters"),
+  handleValidationErrors,
+];
+
+// Installment sale validation (for /api/car/:id/sell-installment)
+const validateInstallmentSale = [
+  body("installment.downPayment")
+    .isFloat({ min: 0 })
+    .withMessage("Down payment must be a positive number"),
+  body("installment.remainingAmount")
+    .isFloat({ min: 0 })
+    .withMessage("Remaining amount must be a positive number"),
+  body("installment.months")
+    .isInt({ min: 1 })
+    .withMessage("Months must be at least 1"),
+  body("installment.buyer.name")
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Buyer name is required"),
+  body("installment.buyer.email")
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid buyer email"),
+  body("installment.buyer.passport")
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Buyer passport is required and must be 5–20 characters"),
+  handleValidationErrors,
+];
+
+// Legacy validation (kept for backward compatibility if needed)
 const validateCarSale = [
   body("boughtType")
     .isIn(["Paid", "Installment"])
@@ -251,6 +306,82 @@ const validateCarSale = [
     .trim()
     .isLength({ min: 5, max: 20 })
     .withMessage("Buyer passport is required and must be 5–20 characters"),
+
+  handleValidationErrors,
+];
+
+// Installment update validation (for editing existing installment info)
+const validateInstallmentUpdate = [
+  // Buyer name validation (optional, but if provided must be valid)
+  body("buyer.name")
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Buyer name must be between 1 and 100 characters"),
+
+  // Buyer phone validation (optional, but if provided must match phone format)
+  body("buyer.phone")
+    .optional()
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
+
+  // Buyer email validation (optional, but if provided must be valid email)
+  body("buyer.email")
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid buyer email"),
+
+  // Buyer passport validation (required if buyer is provided)
+  body("buyer.passport")
+    .optional()
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Buyer passport must be 5-20 characters"),
+
+  // Down payment validation (optional, but if provided must be positive number)
+  body("downPayment")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Down payment must be a positive number"),
+
+  // Remaining amount validation (optional, but if provided must be positive number)
+  body("remainingAmount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Remaining amount must be a positive number"),
+
+  // Months validation (optional, but if provided must be positive integer)
+  body("months")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Months must be at least 1"),
+
+  // Start date validation (optional, but if provided must be valid ISO8601 date)
+  body("startDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid start date"),
+
+  handleValidationErrors,
+];
+
+// Installment payment validation (for adding payments)
+const validateInstallmentPayment = [
+  body("amount")
+    .isFloat({ min: 0.01 })
+    .withMessage("Payment amount must be a positive number"),
+
+  body("paymentDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid payment date"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes must be less than 500 characters"),
 
   handleValidationErrors,
 ];
@@ -366,7 +497,11 @@ module.exports = {
   validateUserUpdate,
   validateLogin,
   validateCarCreation,
-  validateCarSale,
+  validateCarSale, // Legacy - kept for backward compatibility
+  validatePaidSale, // New - for /api/car/:id/sell
+  validateInstallmentSale, // New - for /api/car/:id/sell-installment
+  validateInstallmentUpdate, // New - for /api/car/:id/edit-installment
+  validateInstallmentPayment, // New - for /api/car/:id/installment/payment
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,

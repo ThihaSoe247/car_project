@@ -114,6 +114,14 @@ router.post(
   carController.addRepair
 );
 
+// Get installment details for a specific car
+router.get(
+  "/car/:id/installment",
+  protect,
+  canViewCarsInternal,
+  carController.getCarInstallmentDetails
+);
+
 router.get(
   "/cars/sold/installment",
   protect,

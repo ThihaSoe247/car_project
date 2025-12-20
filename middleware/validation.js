@@ -225,6 +225,10 @@ const validateInstallmentSale = [
   body("installment.months")
     .isInt({ min: 1 })
     .withMessage("Months must be at least 1"),
+  body("installment.monthlyPayment")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Monthly payment must be a positive number"),
   body("installment.buyer.name")
     .trim()
     .isLength({ min: 1, max: 100 })
@@ -362,6 +366,12 @@ const validateInstallmentUpdate = [
     .optional()
     .isISO8601()
     .withMessage("Please provide a valid start date"),
+
+  // Monthly payment validation (optional, but if provided must be positive number)
+  body("monthlyPayment")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Monthly payment must be a positive number"),
 
   handleValidationErrors,
 ];

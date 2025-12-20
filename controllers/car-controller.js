@@ -614,6 +614,7 @@ const carController = {
         months,
         buyer: installment.buyer,
         startDate,
+        monthlyPayment: installment.monthlyPayment,
         updatedBy: req.user.userId,
       });
 
@@ -1160,6 +1161,7 @@ const carController = {
         remainingAmount,
         months,
         startDate,
+        monthlyPayment,
       } = req.body;
 
       // ✅ Validate and update buyer information
@@ -1369,6 +1371,77 @@ const carController = {
       });
     } finally {
       session.endSession();
+    }
+  },
+
+  // Get installment details for a specific car
+  getCarInstallmentDetails: async (req, res) => {
+    try {
+      const carId = sanitizeId(req.params.id);
+
+      const car = await Car.findById(carId);
+
+      if (!car) {
+        return res.status(404).json({
+          success: false,
+          message: "Car not found",
+        });
+      }
+
+      if (!car.installment) {
+        return res.status(404).json({
+          success: false,
+          message: "Car is not sold on installment",
+        });
+      }
+
+      // Convert to object with virtuals to include installment calculations
+      const carData = car.toObject({ virtuals: true });
+
+      // Calculate payment summary
+      const paymentHistoryTotal = (
+        carData.installment.paymentHistory || []
+      ).reduce((sum, p) => sum + (p.amount || 0), 0);
+      const paidAmount =
+        (carData.installment.downPayment || 0) + paymentHistoryTotal;
+      const totalAmount =
+        (carData.installment.downPayment || 0) +
+        (carData.installment.remainingAmount || 0) +
+        paymentHistoryTotal;
+      const paymentProgress = totalAmount > 0 ? (paidAmount / totalAmount) * 100 : 0;
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          car: {
+            _id: carData._id,
+            licenseNo: carData.licenseNo,
+            brand: carData.brand,
+            model: carData.model,
+            year: carData.year,
+            color: carData.color,
+            priceToSell: carData.priceToSell,
+            purchasePrice: carData.purchasePrice,
+          },
+          installment: carData.installment,
+          paymentSummary: {
+            paidAmount,
+            totalAmount,
+            remainingAmount: carData.installment.remainingAmount,
+            paymentProgress: Math.min(paymentProgress, 100),
+            isFullyPaid: carData.installment.remainingAmount <= 0,
+            monthlyPayment: carData.installmentMonthlyPayment,
+            downPayment: carData.installment.downPayment,
+            paymentsMade: carData.installment.paymentHistory?.length || 0,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching car installment details:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
     }
   },
 

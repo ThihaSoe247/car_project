@@ -67,6 +67,7 @@ const installmentSchema = new mongoose.Schema(
     downPayment: { type: Number, required: true, min: 0 },
     remainingAmount: { type: Number, required: true, min: 0 },
     months: { type: Number, required: true, min: 1 },
+    monthlyPayment: { type: Number, min: 0 },
     buyer: { type: buyerSchema, required: true },
     startDate: { type: Date, required: true, default: Date.now },
     paymentHistory: { type: [paymentHistorySchema], default: [] },
@@ -284,6 +285,10 @@ carSchema.virtual("installmentPaymentProgress").get(function () {
 
 carSchema.virtual("installmentMonthlyPayment").get(function () {
   if (!this.installment || !this.installment.months) return null;
+  // Use manual monthlyPayment if provided, otherwise calculate automatically
+  if (this.installment.monthlyPayment && this.installment.monthlyPayment > 0) {
+    return this.installment.monthlyPayment;
+  }
   return (this.installment.remainingAmount || 0) / this.installment.months;
 });
 
@@ -359,6 +364,7 @@ carSchema.methods.markAsInstallment = function ({
   months,
   buyer,
   startDate,
+  monthlyPayment,
   // updatedBy,
 }) {
   if (
@@ -379,6 +385,12 @@ carSchema.methods.markAsInstallment = function ({
     buyer,
     startDate: startDate || new Date(),
   };
+
+  // Add monthlyPayment if provided
+  if (monthlyPayment != null && monthlyPayment > 0) {
+    this.installment.monthlyPayment = Number(monthlyPayment);
+  }
+
   this.sale = null;
   this.boughtType = "Installment";
   this.isAvailable = false;

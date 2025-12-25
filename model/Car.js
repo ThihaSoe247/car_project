@@ -25,15 +25,6 @@ const buyerSchema = new mongoose.Schema(
         message: "Please provide a valid phone number",
       },
     },
-    email: {
-      type: String,
-      validate: {
-        validator: function (v) {
-          return !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-        },
-        message: "Please provide a valid email address",
-      },
-    },
     passport: {
       type: String,
       required: [true, "Passport is required"],
@@ -284,12 +275,8 @@ carSchema.virtual("installmentPaymentProgress").get(function () {
 });
 
 carSchema.virtual("installmentMonthlyPayment").get(function () {
-  if (!this.installment || !this.installment.months) return null;
-  // Use manual monthlyPayment if provided, otherwise calculate automatically
-  if (this.installment.monthlyPayment && this.installment.monthlyPayment > 0) {
-    return this.installment.monthlyPayment;
-  }
-  return (this.installment.remainingAmount || 0) / this.installment.months;
+  if (!this.installment || !this.installment.monthlyPayment) return null;
+  return this.installment.monthlyPayment;
 });
 
 carSchema.virtual("installmentIsFullyPaid").get(function () {
@@ -370,11 +357,13 @@ carSchema.methods.markAsInstallment = function ({
   if (
     downPayment == null ||
     remainingAmount == null ||
+    months == null ||
+    monthlyPayment == null ||
     !months ||
     !buyer?.name
   ) {
     throw new Error(
-      "Installment requires downPayment, remainingAmount, months, and buyer.name"
+      "Installment requires downPayment, remainingAmount, months, monthlyPayment, and buyer.name"
     );
   }
 
@@ -382,14 +371,10 @@ carSchema.methods.markAsInstallment = function ({
     downPayment: Number(downPayment),
     remainingAmount: Number(remainingAmount),
     months: Number(months),
+    monthlyPayment: Number(monthlyPayment),
     buyer,
     startDate: startDate || new Date(),
   };
-
-  // Add monthlyPayment if provided
-  if (monthlyPayment != null && monthlyPayment > 0) {
-    this.installment.monthlyPayment = Number(monthlyPayment);
-  }
 
   this.sale = null;
   this.boughtType = "Installment";

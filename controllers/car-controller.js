@@ -537,6 +537,7 @@ const carController = {
         !installment.downPayment ||
         !installment.remainingAmount ||
         !installment.months ||
+        !installment.monthlyPayment ||
         !installment.buyer?.name ||
         !installment.buyer?.passport
       ) {
@@ -544,7 +545,7 @@ const carController = {
         return res.status(400).json({
           success: false,
           message:
-            "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.buyer.name, installment.buyer.passport",
+            "Required: installment.downPayment, installment.remainingAmount, installment.months, installment.monthlyPayment, installment.buyer.name, installment.buyer.passport",
         });
       }
 
@@ -569,6 +570,7 @@ const carController = {
       const downPayment = Number(installment.downPayment);
       const remainingAmount = Number(installment.remainingAmount);
       const months = Number(installment.months);
+      const monthlyPayment = Number(installment.monthlyPayment);
 
       if (isNaN(downPayment) || downPayment < 0) {
         await session.abortTransaction();
@@ -591,6 +593,14 @@ const carController = {
         return res.status(400).json({
           success: false,
           message: "installment.months must be a valid positive integer",
+        });
+      }
+
+      if (isNaN(monthlyPayment) || monthlyPayment <= 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "installment.monthlyPayment must be a valid positive number",
         });
       }
 

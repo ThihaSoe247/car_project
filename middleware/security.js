@@ -33,7 +33,7 @@ const corsOptions = {
 
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(",")
-      : ["http://localhost:3000", "http://localhost:3001", "https://bkk-kaungpyae-car-showroom-begdurn3a-bkk-kaung-pyaes-projects.vercel.app"];
+      : ["http://localhost:3000", "http://localhost:3001", "https://bkk-kaungpyae-car-showroom.vercel.app"];
 
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);

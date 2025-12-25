@@ -1527,6 +1527,129 @@ const carController = {
     }
   },
 
+  // Get installment analysis for reporting
+  getInstallmentAnalysis: async (req, res) => {
+    try {
+      const { period, status } = req.query;
+      const now = new Date();
+      let startDate;
+
+      // Set date range based on period
+      if (period === "monthly") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (period === "6months") {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      } else if (period === "yearly") {
+        startDate = new Date(now.getFullYear(), 0, 1);
+      } else {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid period. Use: monthly, 6months, yearly" });
+      }
+
+      // Build filter for installment cars
+      const filter = {
+        "installment.startDate": { $gte: startDate, $lte: now },
+        isAvailable: false,
+        "installment": { $exists: true, $ne: null }
+      };
+
+      // Add status filter if specified
+      if (status === "active") {
+        filter["installment.remainingAmount"] = { $gt: 0 };
+      } else if (status === "completed") {
+        filter["installment.remainingAmount"] = { $lte: 0 };
+      }
+      // "all" status doesn't need additional filter
+
+      const installmentCars = await Car.find(filter);
+
+      // Calculate installment metrics
+      let totalInstallmentValue = 0;
+      let totalCollected = 0;
+      let totalRemaining = 0;
+      let activeInstallments = 0;
+      let completedInstallments = 0;
+
+      const installmentDetails = installmentCars.map((car) => {
+        const installment = car.installment;
+        
+        // Calculate totals for this installment
+        const paymentHistoryTotal = (installment.paymentHistory || [])
+          .reduce((sum, p) => sum + (p.amount || 0), 0);
+        
+        const downPayment = installment.downPayment || 0;
+        const collectedAmount = downPayment + paymentHistoryTotal;
+        const remainingAmount = installment.remainingAmount || 0;
+        const totalValue = collectedAmount + remainingAmount;
+        const progressPercentage = totalValue > 0 ? (collectedAmount / totalValue) * 100 : 0;
+
+        // Update global totals
+        totalInstallmentValue += totalValue;
+        totalCollected += collectedAmount;
+        totalRemaining += remainingAmount;
+
+        if (remainingAmount > 0) {
+          activeInstallments++;
+        } else {
+          completedInstallments++;
+        }
+
+        return {
+          licenseNo: car.licenseNo,
+          brand: car.brand,
+          model: car.model,
+          buyer: {
+            name: installment.buyer.name,
+            passport: installment.buyer.passport,
+          },
+          startDate: installment.startDate,
+          downPayment,
+          totalValue,
+          collectedAmount,
+          remainingAmount,
+          progressPercentage: Math.round(progressPercentage * 100) / 100,
+          monthlyPayment: installment.monthlyPayment,
+          paymentsMade: installment.paymentHistory?.length || 0,
+          isCompleted: remainingAmount <= 0,
+        };
+      });
+
+      // Calculate summary metrics
+      const overallProgressPercentage = totalInstallmentValue > 0 
+        ? (totalCollected / totalInstallmentValue) * 100 
+        : 0;
+
+      const analysis = {
+        summary: {
+          totalInstallments: installmentCars.length,
+          activeInstallments,
+          completedInstallments,
+          totalInstallmentValue,
+          totalCollected,
+          totalRemaining,
+          overallProgressPercentage: Math.round(overallProgressPercentage * 100) / 100,
+          collectionRate: totalInstallmentValue > 0 
+            ? Math.round((totalCollected / totalInstallmentValue) * 100 * 100) / 100 
+            : 0,
+        },
+        period: {
+          start: startDate,
+          end: now,
+          type: period,
+        },
+        installments: installmentDetails,
+      };
+
+      res.json({ success: true, data: analysis });
+    } catch (err) {
+      console.error("Error generating installment analysis:", err);
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to generate installment report" });
+    }
+  },
+
   // ===== PUBLIC ACCESS METHODS (No Buyer/Sale Data) =====
 
   // Get all cars for public access (no sensitive data)

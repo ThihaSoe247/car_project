@@ -1440,7 +1440,7 @@ const carController = {
             remainingAmount: carData.installment.remainingAmount,
             paymentProgress: Math.min(paymentProgress, 100),
             isFullyPaid: carData.installment.remainingAmount <= 0,
-            monthlyPayment: carData.installmentMonthlyPayment,
+            monthlyPayment: carData.installment.monthlyPayment,
             downPayment: carData.installment.downPayment,
             paymentsMade: carData.installment.paymentHistory?.length || 0,
           },

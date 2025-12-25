@@ -1762,9 +1762,9 @@ const carController = {
     try {
       const carId = sanitizeId(req.params.id);
 
-      // Select only safe fields
+      // Select only safe fields (including repair history for public view)
       const safeFields =
-        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt repairs";
 
       const car = await Car.findById(carId).select(safeFields).lean();
 

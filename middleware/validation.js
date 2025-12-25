@@ -226,18 +226,16 @@ const validateInstallmentSale = [
     .isInt({ min: 1 })
     .withMessage("Months must be at least 1"),
   body("installment.monthlyPayment")
-    .optional()
     .isFloat({ min: 0 })
     .withMessage("Monthly payment must be a positive number"),
   body("installment.buyer.name")
     .trim()
     .isLength({ min: 1, max: 100 })
     .withMessage("Buyer name is required"),
-  body("installment.buyer.email")
+  body("installment.buyer.phone")
     .optional()
-    .isEmail()
-    .normalizeEmail()
-    .withMessage("Please provide a valid buyer email"),
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
   body("installment.buyer.passport")
     .trim()
     .isLength({ min: 5, max: 20 })
@@ -299,12 +297,11 @@ const validateCarSale = [
     .trim()
     .isLength({ min: 1, max: 100 })
     .withMessage("Buyer name is required"),
-  body("installment.buyer.email")
+  body("installment.buyer.phone")
     .if(body("boughtType").equals("Installment"))
     .optional()
-    .isEmail()
-    .normalizeEmail()
-    .withMessage("Please provide a valid buyer email"),
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
   body("installment.buyer.passport")
     .if(body("boughtType").equals("Installment"))
     .trim()
@@ -329,12 +326,7 @@ const validateInstallmentUpdate = [
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
 
-  // Buyer email validation (optional, but if provided must be valid email)
-  body("buyer.email")
-    .optional()
-    .isEmail()
-    .normalizeEmail()
-    .withMessage("Please provide a valid buyer email"),
+  // Buyer email validation removed - email not required for installment buyers
 
   // Buyer passport validation (required if buyer is provided)
   body("buyer.passport")
@@ -411,12 +403,7 @@ const validateSaleUpdate = [
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
 
-  // Buyer email validation (optional, but if provided must be valid email)
-  body("buyer.email")
-    .optional()
-    .isEmail()
-    .normalizeEmail()
-    .withMessage("Please provide a valid buyer email"),
+  // Buyer email validation removed - email not required for installment buyers
 
   // Price validation (optional, but if provided must be positive number)
   body("price")

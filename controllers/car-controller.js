@@ -1384,6 +1384,191 @@ const carController = {
     }
   },
 
+  // Upsert installment payment by month (includes penalty tracking)
+  upsertInstallmentPaymentByMonth: async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const carId = sanitizeId(req.params.id);
+      const { monthNumber, paid, penaltyFee = 0, paymentDate, notes, amount } =
+        req.body;
+
+      const month = Number(monthNumber);
+      if (!Number.isInteger(month) || month < 1) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "monthNumber must be a positive integer",
+        });
+      }
+
+      if (paid === undefined) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "paid flag is required",
+        });
+      }
+
+      const penalty = Number(penaltyFee || 0);
+      if (Number.isNaN(penalty) || penalty < 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "penaltyFee must be zero or a positive number",
+        });
+      }
+
+      const car = await Car.findById(carId).session(session);
+      if (!car || !car.installment) {
+        await session.abortTransaction();
+        return res.status(404).json({
+          success: false,
+          message: "Car not found or not sold on installment",
+        });
+      }
+
+      const monthlyPayment =
+        amount !== undefined && amount !== null
+          ? Number(amount)
+          : Number(car.installment.monthlyPayment || 0);
+
+      if (Number.isNaN(monthlyPayment) || monthlyPayment < 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount must be zero or a positive number",
+        });
+      }
+
+      // Calculate the original total before changes
+      const currentHistory = [...(car.installment.paymentHistory || [])];
+      const historyPaidTotal = currentHistory.reduce(
+        (sum, p) => sum + (p.amount || 0),
+        0
+      );
+      const originalTotal =
+        (car.installment.downPayment || 0) +
+        (car.installment.remainingAmount || 0) +
+        historyPaidTotal;
+
+      let updatedHistory = currentHistory;
+
+      if (paid) {
+        let parsedPaymentDate = paymentDate ? toDate(paymentDate) : new Date();
+        if (paymentDate && !parsedPaymentDate) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "paymentDate must be a valid date",
+          });
+        }
+
+        const existingIndex = updatedHistory.findIndex(
+          (p) => p.monthNumber === month
+        );
+
+        if (existingIndex >= 0) {
+          updatedHistory[existingIndex] = {
+            ...updatedHistory[existingIndex],
+            monthNumber: month,
+            amount: monthlyPayment,
+            penaltyFee: penalty,
+            paymentDate: parsedPaymentDate || new Date(),
+            notes:
+              notes !== undefined
+                ? notes
+                : updatedHistory[existingIndex].notes || "",
+          };
+        } else {
+          updatedHistory.push({
+            monthNumber: month,
+            amount: monthlyPayment,
+            penaltyFee: penalty,
+            paymentDate: parsedPaymentDate || new Date(),
+            notes: notes || "",
+          });
+        }
+      } else {
+        updatedHistory = updatedHistory.filter(
+          (p) => p.monthNumber !== month
+        );
+      }
+
+      // Recalculate remaining amount based on the original total
+      const newHistoryPaidTotal = updatedHistory.reduce(
+        (sum, p) => sum + (p.amount || 0),
+        0
+      );
+      const newRemainingAmount = Math.max(
+        0,
+        originalTotal - (car.installment.downPayment || 0) - newHistoryPaidTotal
+      );
+
+      car.installment.paymentHistory = updatedHistory;
+      car.installment.remainingAmount = newRemainingAmount;
+      car.markModified("installment");
+      car.markModified("installment.paymentHistory");
+
+      const updatedCar = await car.save({ session });
+      await session.commitTransaction();
+
+      const paidMonths = Array.from(
+        new Set(
+          (updatedCar.installment.paymentHistory || [])
+            .map((p) => p.monthNumber)
+            .filter((m) => m != null)
+        )
+      ).sort((a, b) => a - b);
+
+      const penaltyMap = (updatedCar.installment.paymentHistory || []).reduce(
+        (acc, p) => {
+          if (p.monthNumber != null) {
+            acc[p.monthNumber] = p.penaltyFee || 0;
+          }
+          return acc;
+        },
+        {}
+      );
+
+      const totalPenalty = (updatedCar.installment.paymentHistory || []).reduce(
+        (sum, p) => sum + (p.penaltyFee || 0),
+        0
+      );
+
+      const totalPaid = (updatedCar.installment.paymentHistory || []).reduce(
+        (sum, p) => sum + (p.amount || 0),
+        0
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: paid ? "Payment recorded" : "Payment removed",
+        data: {
+          carId: updatedCar._id,
+          remainingAmount: newRemainingAmount,
+          paidMonths,
+          penaltyFees: penaltyMap,
+          totalPenalty,
+          totalPaid,
+          monthlyPayment: updatedCar.installment.monthlyPayment,
+          installmentPeriod: updatedCar.installment.months,
+          paymentHistory: updatedCar.installment.paymentHistory,
+        },
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      console.error("Failed to upsert installment payment:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to update installment payment",
+      });
+    } finally {
+      session.endSession();
+    }
+  },
+
   // Get installment details for a specific car
   getCarInstallmentDetails: async (req, res) => {
     try {

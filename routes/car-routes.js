@@ -14,6 +14,7 @@ const {
   validateInstallmentSale,
   validateInstallmentUpdate,
   validateInstallmentPayment,
+  validateInstallmentPaymentByMonth,
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,
@@ -95,13 +96,22 @@ router.put(
   carController.editInstallmentInfo
 );
 
-// Add payment to installment
+// Add payment to installment, change to the following route, still keep this one for backward compatibility
 router.post(
   "/car/:id/installment/payment",
   protect,
   canEditCar,
   validateInstallmentPayment,
   carController.addInstallmentPayment
+);
+
+// Upsert monthly installment payment (with penalty tracking)
+router.post(
+  "/car/:id/installment/monthly-payment",
+  protect,
+  canEditCar,
+  validateInstallmentPaymentByMonth,
+  carController.upsertInstallmentPaymentByMonth
 );
 
 router.delete("/car/:id", protect, canEditCar, carController.deleteCar);

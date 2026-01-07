@@ -388,6 +388,34 @@ const validateInstallmentPayment = [
   handleValidationErrors,
 ];
 
+// Installment monthly payment validation (with month tracking)
+const validateInstallmentPaymentByMonth = [
+  body("monthNumber")
+    .isInt({ min: 1 })
+    .withMessage("monthNumber must be at least 1"),
+  body("paid")
+    .isBoolean()
+    .withMessage("paid flag must be true or false"),
+  body("penaltyFee")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("penaltyFee must be zero or a positive number"),
+  body("amount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("amount must be zero or a positive number"),
+  body("paymentDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid payment date"),
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes must be less than 500 characters"),
+  handleValidationErrors,
+];
+
 // Sale update validation (for editing existing sale info)
 const validateSaleUpdate = [
   // Buyer name validation (optional, but if provided must be valid)
@@ -499,6 +527,7 @@ module.exports = {
   validateInstallmentSale, // New - for /api/car/:id/sell-installment
   validateInstallmentUpdate, // New - for /api/car/:id/edit-installment
   validateInstallmentPayment, // New - for /api/car/:id/installment/payment
+  validateInstallmentPaymentByMonth, // New - for /api/car/:id/installment/monthly-payment
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,

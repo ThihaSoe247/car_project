@@ -46,8 +46,10 @@ const saleSchema = new mongoose.Schema(
 
 const paymentHistorySchema = new mongoose.Schema(
   {
+    monthNumber: { type: Number, min: 1 },
     amount: { type: Number, required: true, min: 0 },
     paymentDate: { type: Date, required: true, default: Date.now },
+    penaltyFee: { type: Number, min: 0, default: 0 },
     notes: { type: String, trim: true, maxlength: 500 },
   },
   { _id: true, timestamps: true }
@@ -391,12 +393,23 @@ carSchema.methods.relist = function (updatedBy) {
 };
 
 // Add payment to installment
-carSchema.methods.addInstallmentPayment = function (amount, paymentDate, notes) {
+carSchema.methods.addInstallmentPayment = function (
+  amountOrPayload,
+  paymentDate,
+  notes
+) {
   if (!this.installment) {
     throw new Error("Car is not sold on installment");
   }
 
-  const paymentAmount = Number(amount);
+  const payload =
+    amountOrPayload &&
+    typeof amountOrPayload === "object" &&
+    !Array.isArray(amountOrPayload)
+      ? amountOrPayload
+      : { amount: amountOrPayload, paymentDate, notes };
+
+  const paymentAmount = Number(payload.amount);
   if (isNaN(paymentAmount) || paymentAmount <= 0) {
     throw new Error("Payment amount must be a valid positive number");
   }
@@ -407,11 +420,38 @@ carSchema.methods.addInstallmentPayment = function (amount, paymentDate, notes) 
     );
   }
 
+  // Validate optional monthNumber
+  let monthNumber = undefined;
+  if (payload.monthNumber !== undefined && payload.monthNumber !== null) {
+    monthNumber = Number(payload.monthNumber);
+    if (isNaN(monthNumber) || monthNumber < 1) {
+      throw new Error("monthNumber must be a positive integer when provided");
+    }
+  }
+
+  // Validate optional penalty fee
+  const penaltyFee =
+    payload.penaltyFee !== undefined && payload.penaltyFee !== null
+      ? Number(payload.penaltyFee)
+      : 0;
+  if (isNaN(penaltyFee) || penaltyFee < 0) {
+    throw new Error("penaltyFee must be zero or a positive number");
+  }
+
+  // Determine payment date
+  const paymentDateValue = payload.paymentDate || paymentDate || new Date();
+  const parsedDate = new Date(paymentDateValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error("paymentDate must be a valid date");
+  }
+
   // Add payment to history
   this.installment.paymentHistory.push({
+    monthNumber,
     amount: paymentAmount,
-    paymentDate: paymentDate || new Date(),
-    notes: notes || "",
+    paymentDate: parsedDate,
+    penaltyFee,
+    notes: payload.notes || notes || "",
   });
 
   // Update remaining amount

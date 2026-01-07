@@ -307,10 +307,8 @@ const carController = {
 
       const filter = {
         isAvailable: false,
-        $or: [
-          { sale: { $exists: true, $ne: null } },
-          { installment: { $exists: true, $ne: null } },
-        ],
+        boughtType: "Paid",
+        sale: { $exists: true, $ne: null },
       };
 
       // Date range filtering for sold cars

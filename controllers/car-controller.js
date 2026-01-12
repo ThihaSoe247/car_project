@@ -1705,6 +1705,257 @@ const calculateCarProfit = (car) => {
 // Add the new controller methods to the exports
 module.exports = {
   ...carController,
+  // Original combined route (kept for backward compatibility)
+  getProfitAnalysis: async (req, res) => {
+    try {
+      const { period } = req.query;
+      const { startDate, now } = getDateRange(period);
+
+      // ✅ Filter by sale date or installment start date
+      const cars = await Car.find({
+        $or: [
+          { "sale.date": { $gte: startDate, $lte: now } },
+          { "installment.startDate": { $gte: startDate, $lte: now } },
+        ],
+        $and: [
+          { isAvailable: false },
+          { $or: [{ sale: { $exists: true, $ne: null } }, { installment: { $exists: true, $ne: null } }] },
+        ],
+      });
+
+      const report = cars.map(calculateCarProfit);
+      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+
+      res.json({ success: true, totalProfit, cars: report });
+    } catch (err) {
+      console.error("Error generating profit analysis:", err);
+      if (err.message === "Invalid period") {
+        return res.status(400).json({ success: false, message: "Invalid period" });
+      }
+      res.status(500).json({ success: false, message: "Failed to generate report" });
+    }
+  },
+
+  // New: Paid sales profit analysis only
+  getPaidProfitAnalysis: async (req, res) => {
+    try {
+      const { period } = req.query;
+      const { startDate, now } = getDateRange(period);
+
+      // ✅ Filter only paid sales
+      const cars = await Car.find({
+        "sale.date": { $gte: startDate, $lte: now },
+        isAvailable: false,
+        boughtType: "Paid",
+        sale: { $exists: true, $ne: null }
+      });
+
+      const report = cars.map(calculateCarProfit);
+      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+
+      res.json({ 
+        success: true, 
+        totalProfit, 
+        cars: report,
+        reportType: "paid",
+        count: report.length
+      });
+    } catch (err) {
+      console.error("Error generating paid profit analysis:", err);
+      if (err.message === "Invalid period") {
+        return res.status(400).json({ success: false, message: "Invalid period" });
+      }
+      res.status(500).json({ success: false, message: "Failed to generate paid profit report" });
+    }
+  },
+
+  // New: Installment sales profit analysis only
+  getInstallmentProfitAnalysis: async (req, res) => {
+    try {
+      const { period } = req.query;
+      const { startDate, now } = getDateRange(period);
+
+      // ✅ Filter only installment sales
+      const cars = await Car.find({
+        "installment.startDate": { $gte: startDate, $lte: now },
+        isAvailable: false,
+        boughtType: "Installment",
+        installment: { $exists: true, $ne: null }
+      });
+
+      const report = cars.map(calculateCarProfit);
+      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+
+      res.json({ 
+        success: true, 
+        totalProfit, 
+        cars: report,
+        reportType: "installment",
+        count: report.length
+      });
+    } catch (err) {
+      console.error("Error generating installment profit analysis:", err);
+      if (err.message === "Invalid period") {
+        return res.status(400).json({ success: false, message: "Invalid period" });
+      }
+      res.status(500).json({ success: false, message: "Failed to generate installment profit report" });
+    }
+  },
+
+  // ===== PUBLIC ACCESS METHODS (No Buyer/Sale Data) =====
+
+  // Get all cars for public access (no sensitive data)
+  getPublicCarList: async (req, res) => {
+    try {
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const limit = Math.min(
+        parseInt(req.query.limit) || DEFAULT_LIMIT,
+        MAX_LIMIT
+      );
+      const skip = (page - 1) * limit;
+
+      // Build filter based on query parameters
+      const filter = {};
+
+      if (req.query.brand) {
+        filter.brand = new RegExp(req.query.brand, "i");
+      }
+
+      if (req.query.year) {
+        filter.year = parseInt(req.query.year);
+      }
+
+      if (req.query.gear) {
+        filter.gear = req.query.gear;
+      }
+
+      if (req.query.wheelDrive) {
+        filter.wheelDrive = req.query.wheelDrive;
+      }
+
+      // Select only safe fields (exclude sale, installment, repairs, purchasePrice, etc.)
+      const safeFields =
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+
+      const [cars, total] = await Promise.all([
+        Car.find(filter)
+          .select(safeFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Car.countDocuments(filter),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: cars,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching public car list:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
+
+  // Get available cars for public access
+  getPublicAvailableCars: async (req, res) => {
+    try {
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const limit = Math.min(
+        parseInt(req.query.limit) || DEFAULT_LIMIT,
+        MAX_LIMIT
+      );
+      const skip = (page - 1) * limit;
+
+      // Build filter based on query parameters
+      const filter = { isAvailable: true };
+
+      if (req.query.brand) {
+        filter.brand = new RegExp(req.query.brand, "i");
+      }
+
+      if (req.query.year) {
+        filter.year = parseInt(req.query.year);
+      }
+
+      if (req.query.gear) {
+        filter.gear = req.query.gear;
+      }
+
+      if (req.query.wheelDrive) {
+        filter.wheelDrive = req.query.wheelDrive;
+      }
+
+      // Select only safe fields (exclude sale, installment, repairs, purchasePrice, etc.)
+      const safeFields =
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
+
+      const [cars, total] = await Promise.all([
+        Car.find(filter)
+          .select(safeFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Car.countDocuments(filter),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: cars,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching public available cars:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
+
+  // Get single car details for public access
+  getPublicCarById: async (req, res) => {
+    try {
+      const carId = sanitizeId(req.params.id);
+      const car = await Car.findById(carId).select(
+        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt"
+      );
+
+      if (!car) {
+        return res.status(404).json({
+          success: false,
+          message: "Car not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: car,
+      });
+    } catch (error) {
+      console.error("Error fetching public car details:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  },
+
   ownerBookTransfer: async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();

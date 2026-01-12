@@ -1742,7 +1742,7 @@ module.exports = {
       const { period } = req.query;
       const { startDate, now } = getDateRange(period);
 
-      // ✅ Filter only paid sales
+      // Filter only paid sales
       const cars = await Car.find({
         "sale.date": { $gte: startDate, $lte: now },
         isAvailable: false,
@@ -1775,7 +1775,7 @@ module.exports = {
       const { period } = req.query;
       const { startDate, now } = getDateRange(period);
 
-      // ✅ Filter only installment sales
+      // Filter only installment sales
       const cars = await Car.find({
         "installment.startDate": { $gte: startDate, $lte: now },
         isAvailable: false,
@@ -1974,7 +1974,7 @@ module.exports = {
       }
 
       // Check if car is sold (either paid or installment)
-      if (!car.sale || car.isAvailable) {
+      if ((!car.sale && !car.installment) || car.isAvailable) {
         await session.abortTransaction();
         return res.status(400).json({
           success: false,

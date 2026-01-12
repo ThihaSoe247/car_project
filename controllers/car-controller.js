@@ -1054,6 +1054,10 @@ const carController = {
       const cars = await Car.find({
         isAvailable: false,
         boughtType: "Installment",
+        $or: [
+          { ownerBookTransfer: { $exists: false } },
+          { "ownerBookTransfer.transferred": false }
+        ]
       });
 
       res.status(200).json({

@@ -307,8 +307,10 @@ const carController = {
 
       const filter = {
         isAvailable: false,
-        boughtType: "Paid",
-        sale: { $exists: true, $ne: null },
+        $or: [
+          { boughtType: "Paid", sale: { $exists: true, $ne: null } },
+          { boughtType: "Installment", "ownerBookTransfer.transferred": true }
+        ],
       };
 
       // Date range filtering for sold cars
@@ -346,13 +348,26 @@ const carController = {
         const carObj = car.toObject({ virtuals: true });
 
         // Ensure profit is calculated (fallback if virtual doesn't work)
-        if (!carObj.profit && car.sale?.price && car.purchasePrice) {
+        if (!carObj.profit && car.purchasePrice) {
           const totalRepairCost = (car.repairs || []).reduce(
             (sum, r) => sum + (r.cost || 0),
             0
           );
-          carObj.profit =
-            car.sale.price - (car.purchasePrice + totalRepairCost);
+          
+          if (car.sale?.price) {
+            // Paid sale
+            carObj.profit = car.sale.price - (car.purchasePrice + totalRepairCost);
+          } else if (car.installment) {
+            // Installment sale - calculate total contract value
+            const downPayment = car.installment.downPayment || 0;
+            const paymentHistoryTotal = (car.installment.paymentHistory || [])
+              .reduce((sum, p) => sum + (p.amount || 0), 0);
+            const totalPaid = downPayment + paymentHistoryTotal;
+            const remainingAmount = car.installment.remainingAmount || 0;
+            const totalContractValue = totalPaid + remainingAmount;
+            
+            carObj.profit = totalContractValue - (car.purchasePrice + totalRepairCost);
+          }
           carObj.totalRepairCost = totalRepairCost;
         }
 
@@ -1637,339 +1652,130 @@ const carController = {
       });
     }
   },
+};
 
-  getProfitAnalysis: async (req, res) => {
-    try {
-      const { period } = req.query;
-      const now = new Date();
-      let startDate;
+// Helper function to get date range based on period
+const getDateRange = (period) => {
+  const now = new Date();
+  let startDate;
 
-      if (period === "monthly") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else if (period === "6months") {
-        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      } else if (period === "yearly") {
-        startDate = new Date(now.getFullYear(), 0, 1);
-      } else {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid period" });
-      }
+  if (period === "monthly") {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period === "6months") {
+    startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  } else if (period === "yearly") {
+    startDate = new Date(now.getFullYear(), 0, 1);
+  } else {
+    throw new Error("Invalid period");
+  }
 
-      // ✅ Filter by sale date or installment start date
-      const cars = await Car.find({
-        $or: [
-          { "sale.date": { $gte: startDate, $lte: now } },
-          { "installment.startDate": { $gte: startDate, $lte: now } },
-        ],
-        $and: [
-          { isAvailable: false },
-          { $or: [{ sale: { $exists: true, $ne: null } }, { installment: { $exists: true, $ne: null } }] },
-        ],
-      });
+  return { startDate, now };
+};
 
-      const report = cars.map((car) => {
-        const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
-        
-        // Get sold price from sale or installment
-        let soldPrice = 0;
-        let soldDate = null;
-        
-        if (car.sale) {
-          soldPrice = car.sale.price;
-          soldDate = car.sale.date;
-        } else if (car.installment) {
-          soldPrice = car.installment.downPayment + car.installment.remainingAmount;
-          soldDate = car.installment.startDate;
-        } else {
-          // Fallback (shouldn't happen for sold cars)
-          soldPrice = car.priceToSell;
-        }
+// Helper function to calculate profit for a car
+const calculateCarProfit = (car) => {
+  const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
+  let soldPrice = 0;
+  let soldDate = null;
 
-        const profit = soldPrice - car.purchasePrice - totalRepairs;
+  if (car.sale) {
+    soldPrice = car.sale.price;
+    soldDate = car.sale.date;
+  } else if (car.installment) {
+    soldPrice = car.installment.downPayment + car.installment.remainingAmount;
+    soldDate = car.installment.startDate;
+  } else {
+    // Fallback (shouldn't happen for sold cars)
+    soldPrice = car.priceToSell;
+  }
 
-        return {
-          licenseNo: car.licenseNo,
-          brand: car.brand,
-          purchasePrice: car.purchasePrice,
-          soldPrice,
-          totalRepairs,
-          profit,
-          soldOutDate: soldDate,
-        };
-      });
+  const profit = soldPrice - car.purchasePrice - totalRepairs;
 
-      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+  return {
+    licenseNo: car.licenseNo,
+    brand: car.brand,
+    purchasePrice: car.purchasePrice,
+    soldPrice,
+    totalRepairs,
+    profit,
+    soldOutDate: soldDate,
+  };
+};
 
-      res.json({ success: true, totalProfit, cars: report });
-    } catch (err) {
-      console.error("Error generating profit analysis:", err);
-      res
-        .status(500)
-        .json({ success: false, message: "Failed to generate report" });
-    }
-  },
+// Add the new controller methods to the exports
+module.exports = {
+  ...carController,
+  ownerBookTransfer: async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-  // Get installment analysis for reporting
-  getInstallmentAnalysis: async (req, res) => {
-    try {
-      const { period, status } = req.query;
-      const now = new Date();
-      let startDate;
-
-      // Set date range based on period
-      if (period === "monthly") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else if (period === "6months") {
-        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      } else if (period === "yearly") {
-        startDate = new Date(now.getFullYear(), 0, 1);
-      } else {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid period. Use: monthly, 6months, yearly" });
-      }
-
-      // Build filter for installment cars
-      const filter = {
-        "installment.startDate": { $gte: startDate, $lte: now },
-        isAvailable: false,
-        "installment": { $exists: true, $ne: null }
-      };
-
-      // Add status filter if specified
-      if (status === "active") {
-        filter["installment.remainingAmount"] = { $gt: 0 };
-      } else if (status === "completed") {
-        filter["installment.remainingAmount"] = { $lte: 0 };
-      }
-      // "all" status doesn't need additional filter
-
-      const installmentCars = await Car.find(filter);
-
-      // Calculate installment metrics
-      let totalInstallmentValue = 0;
-      let totalCollected = 0;
-      let totalRemaining = 0;
-      let activeInstallments = 0;
-      let completedInstallments = 0;
-
-      const installmentDetails = installmentCars.map((car) => {
-        const installment = car.installment;
-        
-        // Calculate totals for this installment
-        const paymentHistoryTotal = (installment.paymentHistory || [])
-          .reduce((sum, p) => sum + (p.amount || 0), 0);
-        
-        const downPayment = installment.downPayment || 0;
-        const collectedAmount = downPayment + paymentHistoryTotal;
-        const remainingAmount = installment.remainingAmount || 0;
-        const totalValue = collectedAmount + remainingAmount;
-        const progressPercentage = totalValue > 0 ? (collectedAmount / totalValue) * 100 : 0;
-
-        // Update global totals
-        totalInstallmentValue += totalValue;
-        totalCollected += collectedAmount;
-        totalRemaining += remainingAmount;
-
-        if (remainingAmount > 0) {
-          activeInstallments++;
-        } else {
-          completedInstallments++;
-        }
-
-        return {
-          licenseNo: car.licenseNo,
-          brand: car.brand,
-          model: car.model,
-          buyer: {
-            name: installment.buyer.name,
-            passport: installment.buyer.passport,
-          },
-          startDate: installment.startDate,
-          downPayment,
-          totalValue,
-          collectedAmount,
-          remainingAmount,
-          progressPercentage: Math.round(progressPercentage * 100) / 100,
-          monthlyPayment: installment.monthlyPayment,
-          paymentsMade: installment.paymentHistory?.length || 0,
-          isCompleted: remainingAmount <= 0,
-        };
-      });
-
-      // Calculate summary metrics
-      const overallProgressPercentage = totalInstallmentValue > 0 
-        ? (totalCollected / totalInstallmentValue) * 100 
-        : 0;
-
-      const analysis = {
-        summary: {
-          totalInstallments: installmentCars.length,
-          activeInstallments,
-          completedInstallments,
-          totalInstallmentValue,
-          totalCollected,
-          totalRemaining,
-          overallProgressPercentage: Math.round(overallProgressPercentage * 100) / 100,
-          collectionRate: totalInstallmentValue > 0 
-            ? Math.round((totalCollected / totalInstallmentValue) * 100 * 100) / 100 
-            : 0,
-        },
-        period: {
-          start: startDate,
-          end: now,
-          type: period,
-        },
-        installments: installmentDetails,
-      };
-
-      res.json({ success: true, data: analysis });
-    } catch (err) {
-      console.error("Error generating installment analysis:", err);
-      res
-        .status(500)
-        .json({ success: false, message: "Failed to generate installment report" });
-    }
-  },
-
-  // ===== PUBLIC ACCESS METHODS (No Buyer/Sale Data) =====
-
-  // Get all cars for public access (no sensitive data)
-  getPublicCarList: async (req, res) => {
-    try {
-      const page = Math.max(parseInt(req.query.page) || 1, 1);
-      const limit = Math.min(
-        parseInt(req.query.limit) || DEFAULT_LIMIT,
-        MAX_LIMIT
-      );
-      const skip = (page - 1) * limit;
-
-      // Build filter based on query parameters
-      const filter = {};
-
-      if (req.query.brand) {
-        filter.brand = new RegExp(req.query.brand, "i");
-      }
-
-      if (req.query.year) {
-        filter.year = parseInt(req.query.year);
-      }
-
-      if (req.query.gear) {
-        filter.gear = req.query.gear;
-      }
-
-      if (req.query.wheelDrive) {
-        filter.wheelDrive = req.query.wheelDrive;
-      }
-
-      // Select only safe fields (exclude sale, installment, repairs, purchasePrice, etc.)
-      const safeFields =
-        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
-
-      const [cars, total] = await Promise.all([
-        Car.find(filter)
-          .select(safeFields)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        Car.countDocuments(filter),
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        data: cars,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      });
-    } catch (error) {
-      console.error("Failed to fetch public cars list:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  },
-
-  // Get available cars for public access (no sensitive data)
-  getPublicAvailableCars: async (req, res) => {
-    try {
-      const page = Math.max(parseInt(req.query.page) || 1, 1);
-      const limit = Math.min(
-        parseInt(req.query.limit) || DEFAULT_LIMIT,
-        MAX_LIMIT
-      );
-      const skip = (page - 1) * limit;
-
-      // Select only safe fields
-      const safeFields =
-        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt";
-
-      const [cars, total] = await Promise.all([
-        Car.find({ isAvailable: true })
-          .select(safeFields)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        Car.countDocuments({ isAvailable: true }),
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        data: cars,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      });
-    } catch (error) {
-      console.error("Failed to fetch public available cars:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  },
-
-  // Get single car by ID for public access (no sensitive data)
-  getPublicCarById: async (req, res) => {
     try {
       const carId = sanitizeId(req.params.id);
+      const { notes } = req.body;
 
-      // Select only safe fields (including repair history for public view)
-      const safeFields =
-        "licenseNo brand model year enginePower gear color kilo wheelDrive purchaseDate priceToSell images isAvailable createdAt updatedAt repairs";
-
-      const car = await Car.findById(carId).select(safeFields).lean();
-
+      const car = await Car.findById(carId).session(session);
       if (!car) {
+        await session.abortTransaction();
         return res.status(404).json({
           success: false,
           message: "Car not found",
         });
       }
 
+      // Check if car is sold (either paid or installment)
+      if (!car.sale || car.isAvailable) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Car is not sold or is still available",
+        });
+      }
+
+      // Check if already transferred
+      if (car.ownerBookTransfer?.transferred) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Owner book already transferred",
+        });
+      }
+
+      // For installment cars, check if all payments are completed
+      if (car.boughtType === "Installment" && car.installment?.remainingAmount > 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "All installment payments must be completed before transfer",
+        });
+      }
+
+      // Mark owner book transfer (works for both paid and installment)
+      car.ownerBookTransfer = {
+        transferred: true,
+        transferDate: new Date(),
+        notes: notes || "",
+      };
+
+      // Keep boughtType unchanged for analysis purposes
+      car.isAvailable = false;
+
+      const updated = await car.save({ session });
+      await session.commitTransaction();
+
       return res.status(200).json({
         success: true,
-        data: car,
+        message: `Owner book transferred successfully for ${car.boughtType.toLowerCase()} sale.`,
+        car: updated.toObject({ virtuals: true }),
       });
     } catch (error) {
-      console.error("Error fetching public car details:", error);
+      await session.abortTransaction();
+      console.error("Error transferring owner book:", error);
       return res.status(500).json({
         success: false,
-        message: "Internal server error",
+        message: error.message || "Failed to transfer owner book",
       });
+    } finally {
+      session.endSession();
     }
   },
 };
-
-module.exports = carController;

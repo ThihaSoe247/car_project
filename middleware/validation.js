@@ -516,6 +516,16 @@ const validateRepairsArray = [
   handleValidationErrors,
 ];
 
+// Owner book transfer validation
+const validateOwnerBookTransfer = [
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot exceed 500 characters"),
+  handleValidationErrors,
+];
+
 module.exports = {
   validateRegistration,
   validateUserCreation,
@@ -528,6 +538,7 @@ module.exports = {
   validateInstallmentUpdate, // New - for /api/car/:id/edit-installment
   validateInstallmentPayment, // New - for /api/car/:id/installment/payment
   validateInstallmentPaymentByMonth, // New - for /api/car/:id/installment/monthly-payment
+  validateOwnerBookTransfer, // New - for /api/car/:id/owner-book-transfer
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,

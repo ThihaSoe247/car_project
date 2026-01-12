@@ -15,6 +15,7 @@ const {
   validateInstallmentUpdate,
   validateInstallmentPayment,
   validateInstallmentPaymentByMonth,
+  validateOwnerBookTransfer,
   validateSaleUpdate,
   validateRepair,
   validateRepairsArray,
@@ -87,7 +88,7 @@ router.put(
   carController.editSaleInfo
 );
 
-// Edit installment information
+// Edit installment information, like customer infos and car infos, not payments yet
 router.put(
   "/car/:id/edit-installment",
   protect,
@@ -139,11 +140,34 @@ router.get(
   carController.getSoldCarsByInstallment
 );
 
+//Old route for analysis/profit, now it's separated into 2 separated routes
 router.get(
   "/analysis/profit",
   protect,
   canViewProfit, // ✅ Admin + Moderator only
   carController.getProfitAnalysis
+);
+
+router.get(
+  "/analysis/profit/paid",
+  protect,
+  canViewProfit, // ✅ Admin + Moderator only
+  carController.getPaidProfitAnalysis
+);
+
+router.get(
+  "/analysis/profit/installment",
+  protect,
+  canViewProfit, // ✅ Admin + Moderator only
+  carController.getInstallmentProfitAnalysis
+);
+
+router.put(
+  "/car/:id/owner-book-transfer",
+  protect,
+  canEditCar,
+  validateOwnerBookTransfer,
+  carController.ownerBookTransfer
 );
 
 module.exports = router;

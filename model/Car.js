@@ -187,6 +187,13 @@ const carSchema = new mongoose.Schema(
       type: [repairSchema],
       default: [],
     },
+
+    // Owner book transfer info
+    ownerBookTransfer: {
+      transferred: { type: Boolean, default: false },
+      transferDate: { type: Date },
+      notes: { type: String, trim: true, maxlength: 500 },
+    },
   },
   {
     timestamps: true,
@@ -220,15 +227,13 @@ carSchema.virtual("profit").get(function () {
 
   // Case 2: Installment sale
   if (this.installment && this.purchasePrice != null) {
-    // For installment sales, `remainingAmount` represents the total remaining
-    // amount to be paid (not the monthly installment). The total incoming
-    // amount from the buyer is therefore:
-    //   downPayment + remainingAmount
+    // For installment sales, profit should be based on total contract value
+    // Total contract value = downPayment + original remaining amount
+    // This equals the total amount the buyer agreed to pay
     const downPayment = this.installment.downPayment || 0;
-    const remainingAmount = this.installment.remainingAmount || 0;
-
-    const totalInstallment = downPayment + remainingAmount;
-    return totalInstallment - (this.purchasePrice + totalRepairs);
+    const totalContractValue = this.installmentTotalAmount || (downPayment + (this.installment.remainingAmount || 0));
+    
+    return totalContractValue - (this.purchasePrice + totalRepairs);
   }
 
   return null;
@@ -254,18 +259,19 @@ carSchema.virtual("installmentPaidAmount").get(function () {
 
 carSchema.virtual("installmentTotalAmount").get(function () {
   if (!this.installment) return null;
-  // Total amount = downPayment + current remainingAmount + all payments made
-  // This equals the original total (downPayment + original remainingAmount)
+  // Total contract value = downPayment + original remaining amount
+  // This is the total amount buyer agreed to pay
+  // Note: remainingAmount decreases as payments are made
   const paymentHistoryTotal =
     (this.installment.paymentHistory || []).reduce(
       (sum, p) => sum + (p.amount || 0),
       0
     );
-  return (
-    (this.installment.downPayment || 0) +
-    (this.installment.remainingAmount || 0) +
-    paymentHistoryTotal
-  );
+  const totalPaid = (this.installment.downPayment || 0) + paymentHistoryTotal;
+  const remainingAmount = this.installment.remainingAmount || 0;
+  
+  // Total contract = what's been paid + what's left to pay
+  return totalPaid + remainingAmount;
 });
 
 carSchema.virtual("installmentPaymentProgress").get(function () {

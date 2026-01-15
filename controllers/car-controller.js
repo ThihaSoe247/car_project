@@ -122,7 +122,7 @@ const carController = {
             public_id: img.public_id,
           }));
           uploadedImageIds = imageObjs.map((img) => img.public_id);
-          
+
           console.log("Successfully uploaded", imageObjs.length, "image(s)");
         } catch (uploadError) {
           // Clean up any images that were successfully uploaded before the failure
@@ -140,7 +140,7 @@ const carController = {
       try {
         console.log("Creating car with", imageObjs.length, "image(s)");
         console.log("Image objects:", JSON.stringify(imageObjs, null, 2));
-        
+
         const newCar = new Car({
           licenseNo: licenseNo?.trim().toUpperCase(),
           brand: brand?.trim(),
@@ -160,15 +160,15 @@ const carController = {
         // ✅ Explicitly set images array to ensure it's saved
         // Setting it after object creation ensures Mongoose properly tracks and saves the images field
         newCar.images = imageObjs;
-        
+
         // Mark images as modified to ensure they're saved (even for new documents)
         newCar.markModified('images');
 
         await newCar.save();
-        
+
         // Reload the car from database to ensure we have the latest data
         const savedCar = await Car.findById(newCar._id);
-        
+
         // Ensure images are included in the response
         const carData = savedCar.toObject({ virtuals: true });
         console.log("Car created successfully with", carData.images?.length || 0, "image(s) in database");
@@ -353,7 +353,7 @@ const carController = {
             (sum, r) => sum + (r.cost || 0),
             0
           );
-          
+
           if (car.sale?.price) {
             // Paid sale
             carObj.profit = car.sale.price - (car.purchasePrice + totalRepairCost);
@@ -365,7 +365,7 @@ const carController = {
             const totalPaid = downPayment + paymentHistoryTotal;
             const remainingAmount = car.installment.remainingAmount || 0;
             const totalContractValue = totalPaid + remainingAmount;
-            
+
             carObj.profit = totalContractValue - (car.purchasePrice + totalRepairCost);
           }
           carObj.totalRepairCost = totalRepairCost;
@@ -671,8 +671,8 @@ const carController = {
       const carId = sanitizeId(req.params.id);
 
       const car = await Car.findById(carId)
-        // .populate("createdBy", "name email")
-        // .populate("updatedBy", "name email");
+      // .populate("createdBy", "name email")
+      // .populate("updatedBy", "name email");
 
       if (!car) {
         return res.status(404).json({
@@ -683,7 +683,7 @@ const carController = {
 
       // ✅ Convert to object with virtuals and ensure images are included
       const carData = car.toObject({ virtuals: true });
-      
+
       // Ensure images field is present (default to empty array if undefined)
       if (!carData.images) {
         carData.images = [];
@@ -803,15 +803,15 @@ const carController = {
 
       // Check if user wants to replace images (default: true - replace old images when uploading new ones)
       const replaceImages = updates.replaceImages !== false; // Default to true unless explicitly set to false
-      
+
       // Step 1: Handle existingImages - determine which images to keep
       // This handles the case where user removes some images from frontend
       // existingImages can be: array of public_ids, JSON string, empty array (remove all), or undefined (keep all)
       const hasExistingImagesParam = updates.existingImages !== undefined;
-      
+
       if (hasExistingImagesParam) {
         let keep = [];
-        
+
         // Handle empty array case (remove all images)
         if (Array.isArray(updates.existingImages) && updates.existingImages.length === 0) {
           keep = [];
@@ -863,16 +863,16 @@ const carController = {
           const deleteResults = await Promise.allSettled(
             toDelete.map((img) => cloudinary.uploader.destroy(img.public_id))
           );
-          
+
           const successful = deleteResults.filter(r => r.status === 'fulfilled').length;
           const failed = deleteResults.filter(r => r.status === 'rejected').length;
-          
+
           deleteResults.forEach((result, index) => {
             if (result.status === 'rejected') {
               console.error(`Failed to delete image ${toDelete[index].public_id}:`, result.reason);
             }
           });
-          
+
           console.log(`Cloudinary deletion: ${successful} successful, ${failed} failed`);
         } else if (keepPublicIds.length === 0 && car.images.length > 0) {
           // All images should be removed
@@ -925,7 +925,7 @@ const carController = {
           // Append mode: add to existing
           finalImages.push(...newImageObjs);
         }
-        
+
         console.log(`Uploaded ${uploaded.length} new image(s)`);
       }
 
@@ -1028,7 +1028,7 @@ const carController = {
       // Reload from database to ensure we have the latest data
       const savedCar = await Car.findById(car._id);
       const carData = savedCar.toObject({ virtuals: true });
-      
+
       console.log(`Car saved successfully with ${carData.images?.length || 0} image(s) in database`);
       if (carData.images && carData.images.length > 0) {
         console.log(`Final image URLs in response:`, carData.images.map(img => img.url));
@@ -1676,23 +1676,27 @@ const getDateRange = (period) => {
   return { startDate, now };
 };
 
-// Helper function to calculate profit for a car
+// Helper function to calculate profit for a car (General Profit)
 const calculateCarProfit = (car) => {
   const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
   let soldPrice = 0;
   let soldDate = null;
 
   if (car.sale) {
+    // Paid sale - soldPrice is actual sale price
     soldPrice = car.sale.price;
     soldDate = car.sale.date;
   } else if (car.installment) {
-    soldPrice = car.installment.downPayment + car.installment.remainingAmount;
+    // Installment sale - soldPrice = priceToSell (base car price, no negotiation)
+    // For general profit, we use the base car price, NOT the contract value
+    soldPrice = car.priceToSell;
     soldDate = car.installment.startDate;
   } else {
     // Fallback (shouldn't happen for sold cars)
     soldPrice = car.priceToSell;
   }
 
+  // General Profit = soldPrice - (purchasePrice + repairs)
   const profit = soldPrice - car.purchasePrice - totalRepairs;
 
   return {
@@ -1703,6 +1707,96 @@ const calculateCarProfit = (car) => {
     totalRepairs,
     profit,
     soldOutDate: soldDate,
+  };
+};
+
+// Helper function to calculate detailed profit for a car
+const calculateCarProfitDetails = (car) => {
+  const totalRepairs = car.repairs.reduce((sum, r) => sum + r.cost, 0);
+  let soldPrice = 0;
+  let soldDate = null;
+  let sellingPrice = 0;
+  let paymentBreakdown = {};
+  let generalProfit = 0;
+  let detailedProfit = 0;
+  let contractValue = 0;
+
+  if (car.sale) {
+    // Paid sale - sellingPrice is original asking price, soldPrice is actual sale price
+    sellingPrice = car.priceToSell; // Original asking price
+    soldPrice = car.sale.price; // Actual sale price
+    soldDate = car.sale.date;
+    generalProfit = soldPrice - car.purchasePrice - totalRepairs;
+    detailedProfit = generalProfit; // Same for paid sales
+    contractValue = soldPrice;
+    paymentBreakdown = {
+      downPayment: 0,
+      monthlyPayments: [],
+      totalPaid: car.sale.price,
+      penaltyFeesTotal: 0,
+      remainingAmount: 0,
+      monthlyPayment: 0
+    };
+  } else if (car.installment) {
+    // Installment sale - sellingPrice = soldPrice = priceToSell (fixed price, no negotiation)
+    sellingPrice = car.priceToSell; // Base car price
+    soldPrice = car.priceToSell; // Same as sellingPrice
+    soldDate = car.installment.startDate;
+
+    const downPayment = car.installment.downPayment || 0;
+    const paymentHistoryTotal = (car.installment.paymentHistory || [])
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    const penaltyFeesTotal = (car.installment.paymentHistory || [])
+      .reduce((sum, p) => sum + (p.penaltyFee || 0), 0);
+    const totalPaid = downPayment + paymentHistoryTotal;
+    const remainingAmount = car.installment.remainingAmount || 0;
+
+    // Contract value includes all payments + penalties (financing charges, taxes, etc.)
+    contractValue = totalPaid + remainingAmount + penaltyFeesTotal;
+
+    // General profit = base car price - costs (profit on the car itself)
+    generalProfit = car.priceToSell - car.purchasePrice - totalRepairs;
+
+    // Detailed profit = contract value - costs (includes financing income + penalties)
+    detailedProfit = contractValue - car.purchasePrice - totalRepairs;
+
+    paymentBreakdown = {
+      downPayment,
+      monthlyPayments: car.installment.paymentHistory || [],
+      totalPaid,
+      penaltyFeesTotal,
+      remainingAmount,
+      monthlyPayment: car.installment.monthlyPayment || 0
+    };
+  } else {
+    // Fallback
+    sellingPrice = car.priceToSell;
+    soldPrice = car.priceToSell;
+    generalProfit = car.priceToSell - car.purchasePrice - totalRepairs;
+    detailedProfit = generalProfit;
+    contractValue = car.priceToSell;
+    paymentBreakdown = {
+      downPayment: 0,
+      monthlyPayments: [],
+      totalPaid: car.priceToSell,
+      penaltyFeesTotal: 0,
+      remainingAmount: 0,
+      monthlyPayment: 0
+    };
+  }
+
+  return {
+    licenseNo: car.licenseNo,
+    brand: car.brand,
+    purchasePrice: car.purchasePrice,
+    sellingPrice, // Base asking price
+    soldPrice, // Actual sale price (for paid) or priceToSell (for installment)
+    contractValue, // Total money collected (includes taxes, fees, penalties)
+    totalRepairs,
+    generalProfit, // Profit on car itself
+    detailedProfit, // Total income including financing (for installment)
+    soldOutDate: soldDate,
+    paymentBreakdown,
   };
 };
 
@@ -1757,9 +1851,9 @@ module.exports = {
       const report = cars.map(calculateCarProfit);
       const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
 
-      res.json({ 
-        success: true, 
-        totalProfit, 
+      res.json({
+        success: true,
+        totalProfit,
         cars: report,
         reportType: "paid",
         count: report.length
@@ -1773,7 +1867,7 @@ module.exports = {
     }
   },
 
-  // New: Installment sales profit analysis only
+  // New: Installment sales profit analysis only (with both general and detailed profit)
   getInstallmentProfitAnalysis: async (req, res) => {
     try {
       const { period } = req.query;
@@ -1787,15 +1881,29 @@ module.exports = {
         installment: { $exists: true, $ne: null }
       });
 
-      const report = cars.map(calculateCarProfit);
-      const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+      // Use calculateCarProfitDetails for comprehensive profit breakdown
+      const report = cars.map(calculateCarProfitDetails);
 
-      res.json({ 
-        success: true, 
-        totalProfit, 
-        cars: report,
+      // Calculate total general profit (profit on car itself)
+      const totalGeneralProfit = report.reduce((sum, r) => sum + r.generalProfit, 0);
+
+      // Calculate total detailed profit (includes financing income, taxes, penalties)
+      const totalDetailedProfit = report.reduce((sum, r) => sum + r.detailedProfit, 0);
+
+      // Calculate total penalty fees collected
+      const totalPenaltyFees = report.reduce((sum, r) => sum + (r.paymentBreakdown?.penaltyFeesTotal || 0), 0);
+
+      res.json({
+        success: true,
         reportType: "installment",
-        count: report.length
+        count: report.length,
+        summary: {
+          totalGeneralProfit,    // Profit on the car itself (priceToSell - purchasePrice - repairs)
+          totalDetailedProfit,   // Total income including financing (contractValue - purchasePrice - repairs)
+          totalPenaltyFees,      // Total penalty fees collected
+          financingIncome: totalDetailedProfit - totalGeneralProfit  // Extra income from financing (taxes, fees, penalties)
+        },
+        cars: report
       });
     } catch (err) {
       console.error("Error generating installment profit analysis:", err);

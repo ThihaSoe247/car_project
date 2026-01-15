@@ -225,15 +225,75 @@ carSchema.virtual("profit").get(function () {
     return this.sale.price - (this.purchasePrice + totalRepairs);
   }
 
-  // Case 2: Installment sale
+  // Case 2: Installment sale - General Profit (based on base car price)
   if (this.installment && this.purchasePrice != null) {
-    // For installment sales, profit should be based on total contract value
-    // Total contract value = downPayment + original remaining amount
-    // This equals the total amount the buyer agreed to pay
+    // General profit = priceToSell (base car price) - (purchase price + repairs)
+    // Note: For installment, sellingPrice = soldPrice = priceToSell (no negotiation, fixed price)
+    return this.priceToSell - (this.purchasePrice + totalRepairs);
+  }
+
+  return null;
+});
+
+// New virtual for detailed profit calculation (includes all payment details)
+carSchema.virtual("profitDetails").get(function () {
+  const totalRepairs = this.totalRepairCost || 0;
+
+  // Case 1: Paid sale - different sellingPrice vs soldPrice
+  if (this.sale?.price && this.purchasePrice != null) {
+    return {
+      sellingPrice: this.priceToSell, // Original asking price
+      soldPrice: this.sale.price, // Actual sale price
+      purchasePrice: this.purchasePrice,
+      totalRepairs,
+      generalProfit: this.sale.price - (this.purchasePrice + totalRepairs),
+      paymentBreakdown: {
+        downPayment: 0,
+        monthlyPayments: [],
+        totalPaid: this.sale.price,
+        remainingAmount: 0
+      }
+    };
+  }
+
+  // Case 2: Installment sale - sellingPrice and soldPrice are priceToSell (fixed price, no negotiation)
+  if (this.installment && this.purchasePrice != null) {
     const downPayment = this.installment.downPayment || 0;
-    const totalContractValue = this.installmentTotalAmount || (downPayment + (this.installment.remainingAmount || 0));
+    const paymentHistoryTotal = (this.installment.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.amount || 0), 0
+    );
+    const penaltyFeesTotal = (this.installment.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.penaltyFee || 0), 0
+    );
+    const totalPaid = downPayment + paymentHistoryTotal;
+    const remainingAmount = this.installment.remainingAmount || 0;
     
-    return totalContractValue - (this.purchasePrice + totalRepairs);
+    // Contract value includes all payments + penalties (financing charges, taxes, etc.)
+    const contractValue = totalPaid + remainingAmount + penaltyFeesTotal;
+    
+    // General profit = base car price - costs (same as Paid logic)
+    const generalProfit = this.priceToSell - (this.purchasePrice + totalRepairs);
+    
+    // Detailed profit = full contract value - costs (includes financing income)
+    const detailedProfit = contractValue - (this.purchasePrice + totalRepairs);
+
+    return {
+      sellingPrice: this.priceToSell, // Base car price (fixed for installment)
+      soldPrice: this.priceToSell, // Same as sellingPrice (no negotiation)
+      contractValue, // Total money collected (includes taxes, fees, penalties)
+      purchasePrice: this.purchasePrice,
+      totalRepairs,
+      generalProfit, // Profit on car itself
+      detailedProfit, // Total income including financing
+      paymentBreakdown: {
+        downPayment,
+        monthlyPayments: this.installment.paymentHistory || [],
+        totalPaid,
+        penaltyFeesTotal,
+        remainingAmount,
+        monthlyPayment: this.installment.monthlyPayment || 0
+      }
+    };
   }
 
   return null;

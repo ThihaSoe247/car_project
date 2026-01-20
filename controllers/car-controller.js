@@ -1785,17 +1785,28 @@ const calculateCarProfitDetails = (car) => {
     };
   }
 
+  // Determine the report date with fallback logic
+  // Prefer installment.startDate, but include fallback fields
+  const reportDate = soldDate ||
+    car.soldOutDate ||
+    car.soldDate ||
+    car.saleDate ||
+    car.startDate ||
+    car.date ||
+    car.createdAt;
+
   return {
+    id: car._id?.toString() || car.id?.toString(),  // Include both _id and id for compatibility
+    _id: car._id,  // Include MongoDB _id
     licenseNo: car.licenseNo,
     brand: car.brand,
     purchasePrice: car.purchasePrice,
-    sellingPrice, // Base asking price
     soldPrice, // Actual sale price (for paid) or priceToSell (for installment)
-    contractValue, // Total money collected (includes taxes, fees, penalties)
     totalRepairs,
+    profit: detailedProfit, // Numeric profit value (use detailedProfit for total profit)
+    reportDate,  // The chosen report date with fallbacks
     generalProfit, // Profit on car itself
     detailedProfit, // Total income including financing (for installment)
-    soldOutDate: soldDate,
     paymentBreakdown,
   };
 };
@@ -1871,6 +1882,25 @@ module.exports = {
   getInstallmentProfitAnalysis: async (req, res) => {
     try {
       const { period } = req.query;
+
+      // Validate period parameter (required)
+      if (!period) {
+        return res.status(400).json({
+          success: false,
+          message: "Period query parameter is required (monthly | 6months | yearly)"
+        });
+      }
+
+      // Validate period has correct value
+      const validPeriods = ["monthly", "6months", "yearly"];
+      if (!validPeriods.includes(period)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid period. Must be one of: monthly, 6months, yearly"
+        });
+      }
+
+      // Get date range for the period
       const { startDate, now } = getDateRange(period);
 
       // Filter only installment sales
@@ -1893,7 +1923,11 @@ module.exports = {
       // Calculate total penalty fees collected
       const totalPenaltyFees = report.reduce((sum, r) => sum + (r.paymentBreakdown?.penaltyFeesTotal || 0), 0);
 
-      res.json({
+      // Calculate financing income (difference between detailed and general profit)
+      const financingIncome = totalDetailedProfit - totalGeneralProfit;
+
+      // Return response with proper structure
+      return res.status(200).json({
         success: true,
         reportType: "installment",
         count: report.length,
@@ -1901,16 +1935,18 @@ module.exports = {
           totalGeneralProfit,    // Profit on the car itself (priceToSell - purchasePrice - repairs)
           totalDetailedProfit,   // Total income including financing (contractValue - purchasePrice - repairs)
           totalPenaltyFees,      // Total penalty fees collected
-          financingIncome: totalDetailedProfit - totalGeneralProfit  // Extra income from financing (taxes, fees, penalties)
+          financingIncome        // Extra income from financing (taxes, fees, penalties)
         },
-        cars: report
+        cars: report  // Always return array even if empty
       });
     } catch (err) {
       console.error("Error generating installment profit analysis:", err);
-      if (err.message === "Invalid period") {
-        return res.status(400).json({ success: false, message: "Invalid period" });
-      }
-      res.status(500).json({ success: false, message: "Failed to generate installment profit report" });
+
+      // Return 500 with clear error message
+      return res.status(500).json({
+        success: false,
+        message: err.message || "Failed to generate installment profit report"
+      });
     }
   },
 

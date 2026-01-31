@@ -1824,8 +1824,9 @@ module.exports = {
       const { period } = req.query;
       const { startDate, now } = getDateRange(period);
 
-      // ✅ Filter by sale date or installment start date
-      // Only include completed deals: Paid sales OR fully paid + transferred installments
+      // ✅ Filter by appropriate completion date for each type
+      // Paid: sale.date (profit realized immediately)
+      // Installment: transferDate (profit realized when deal completes)
       const cars = await Car.find({
         $or: [
           {
@@ -1834,7 +1835,7 @@ module.exports = {
             sale: { $exists: true, $ne: null }
           },
           {
-            "installment.startDate": { $gte: startDate, $lte: now },
+            "ownerBookTransfer.transferDate": { $gte: startDate, $lte: now },
             boughtType: "Installment",
             installment: { $exists: true, $ne: null },
             "installment.remainingAmount": { $lte: 0 }, // Fully paid
@@ -1916,8 +1917,9 @@ module.exports = {
       const { startDate, now } = getDateRange(period);
 
       // Filter only COMPLETED installment sales (fully paid + owner book transferred)
+      // ✅ Use transferDate to recognize profit in correct period (when deal completes)
       const cars = await Car.find({
-        "installment.startDate": { $gte: startDate, $lte: now },
+        "ownerBookTransfer.transferDate": { $gte: startDate, $lte: now },
         isAvailable: false,
         boughtType: "Installment",
         installment: { $exists: true, $ne: null },

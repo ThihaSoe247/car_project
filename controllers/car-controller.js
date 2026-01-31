@@ -309,7 +309,11 @@ const carController = {
         isAvailable: false,
         $or: [
           { boughtType: "Paid", sale: { $exists: true, $ne: null } },
-          { boughtType: "Installment", "ownerBookTransfer.transferred": true }
+          {
+            boughtType: "Installment",
+            "ownerBookTransfer.transferred": true,
+            "installment.remainingAmount": { $lte: 0 } // Must be fully paid
+          }
         ],
       };
 
@@ -1821,15 +1825,23 @@ module.exports = {
       const { startDate, now } = getDateRange(period);
 
       // ✅ Filter by sale date or installment start date
+      // Only include completed deals: Paid sales OR fully paid + transferred installments
       const cars = await Car.find({
         $or: [
-          { "sale.date": { $gte: startDate, $lte: now } },
-          { "installment.startDate": { $gte: startDate, $lte: now } },
+          {
+            "sale.date": { $gte: startDate, $lte: now },
+            boughtType: "Paid",
+            sale: { $exists: true, $ne: null }
+          },
+          {
+            "installment.startDate": { $gte: startDate, $lte: now },
+            boughtType: "Installment",
+            installment: { $exists: true, $ne: null },
+            "installment.remainingAmount": { $lte: 0 }, // Fully paid
+            "ownerBookTransfer.transferred": true // Owner book transferred
+          }
         ],
-        $and: [
-          { isAvailable: false },
-          { $or: [{ sale: { $exists: true, $ne: null } }, { installment: { $exists: true, $ne: null } }] },
-        ],
+        isAvailable: false
       });
 
       const report = cars.map(calculateCarProfit);
@@ -1903,12 +1915,14 @@ module.exports = {
       // Get date range for the period
       const { startDate, now } = getDateRange(period);
 
-      // Filter only installment sales
+      // Filter only COMPLETED installment sales (fully paid + owner book transferred)
       const cars = await Car.find({
         "installment.startDate": { $gte: startDate, $lte: now },
         isAvailable: false,
         boughtType: "Installment",
-        installment: { $exists: true, $ne: null }
+        installment: { $exists: true, $ne: null },
+        "installment.remainingAmount": { $lte: 0 }, // ✅ Must be fully paid
+        "ownerBookTransfer.transferred": true // ✅ Must have owner book transferred
       });
 
       // Use calculateCarProfitDetails for comprehensive profit breakdown

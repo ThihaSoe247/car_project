@@ -1766,7 +1766,7 @@ const calculateCarProfitDetails = (car) => {
 
     paymentBreakdown = {
       downPayment,
-      monthlyPayments: car.installment.paymentHistory || [],
+      //monthlyPayments: car.installment.paymentHistory || [],
       totalPaid,
       penaltyFeesTotal,
       remainingAmount,
@@ -1813,7 +1813,7 @@ const calculateCarProfitDetails = (car) => {
     reportDate,  // The chosen report date with fallbacks
     generalProfit, // Profit on car itself
     detailedProfit, // Total income including financing (for installment)
-    paymentBreakdown,
+    paymentBreakdown
   };
 };
 

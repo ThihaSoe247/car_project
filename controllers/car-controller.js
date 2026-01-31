@@ -1758,6 +1758,10 @@ const calculateCarProfitDetails = (car) => {
     // Contract value includes all payments + penalties (financing charges, taxes, etc.)
     contractValue = totalPaid + remainingAmount + penaltyFeesTotal;
 
+    // Total Sales = (Down + Monthly + Penalties) - Repairs
+    // Represents net revenue collected from customer
+    const totalSales = (downPayment + paymentHistoryTotal + penaltyFeesTotal) - totalRepairs;
+
     // General profit = base car price - costs (profit on the car itself)
     generalProfit = car.priceToSell - car.purchasePrice - totalRepairs;
 
@@ -1770,7 +1774,8 @@ const calculateCarProfitDetails = (car) => {
       totalPaid,
       penaltyFeesTotal,
       remainingAmount,
-      monthlyPayment: car.installment.monthlyPayment || 0
+      monthlyPayment: car.installment.monthlyPayment || 0,
+      totalSales // Add to payment breakdown
     };
   } else {
     // Fallback
@@ -1801,7 +1806,7 @@ const calculateCarProfitDetails = (car) => {
 
   return {
     id: car._id?.toString() || car.id?.toString(),  // Include both _id and id for compatibility
-    _id: car._id,  // Include MongoDB _id
+    //_id: car._id,  // Include MongoDB _id
     licenseNo: car.licenseNo,
     brand: car.brand,
     purchasePrice: car.purchasePrice,
@@ -1941,6 +1946,12 @@ module.exports = {
       // Calculate total penalty fees collected
       const totalPenaltyFees = report.reduce((sum, r) => sum + (r.paymentBreakdown?.penaltyFeesTotal || 0), 0);
 
+      // Calculate total sales (net revenue after repairs)
+      const totalSales = report.reduce((sum, r) => sum + (r.paymentBreakdown?.totalSales || 0), 0);
+
+      // Calculate total repair costs
+      const totalRepairCosts = report.reduce((sum, r) => sum + (r.totalRepairs || 0), 0);
+
       // Calculate financing income (difference between detailed and general profit)
       const financingIncome = totalDetailedProfit - totalGeneralProfit;
 
@@ -1952,6 +1963,8 @@ module.exports = {
         summary: {
           totalGeneralProfit,    // Profit on the car itself (priceToSell - purchasePrice - repairs)
           totalDetailedProfit,   // Total income including financing (contractValue - purchasePrice - repairs)
+          totalSales,            // Net revenue collected from customers (Down + Monthly + Penalties - Repairs)
+          totalRepairCosts,      // Total spent on repairs
           totalPenaltyFees,      // Total penalty fees collected
           financingIncome        // Extra income from financing (taxes, fees, penalties)
         },

@@ -1760,7 +1760,7 @@ const calculateCarProfitDetails = (car) => {
 
     // Total Sales = (Down + Monthly + Penalties) - Repairs
     // Represents net revenue collected from customer
-    const totalSales = (downPayment + paymentHistoryTotal + penaltyFeesTotal) - totalRepairs;
+    const totalSales = (downPayment + paymentHistoryTotal) - totalRepairs;
 
     // General profit = base car price - costs (profit on the car itself)
     generalProfit = car.priceToSell - car.purchasePrice - totalRepairs;

@@ -1805,11 +1805,11 @@ const calculateCarProfitDetails = (car) => {
     licenseNo: car.licenseNo,
     brand: car.brand,
     purchasePrice: car.purchasePrice,
-    sellingPrice, // Original asking price
+    //sellingPrice, // Original asking price
     soldPrice, // Actual sale price (for paid) or priceToSell (for installment)
     contractValue, // Total revenue including penalties (for installment)
     totalRepairs,
-    profit: detailedProfit, // Numeric profit value (use detailedProfit for total profit)
+    //profit: detailedProfit, // Numeric profit value (use detailedProfit for total profit)
     reportDate,  // The chosen report date with fallbacks
     generalProfit, // Profit on car itself
     detailedProfit, // Total income including financing (for installment)

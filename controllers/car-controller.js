@@ -1756,7 +1756,7 @@ const calculateCarProfitDetails = (car) => {
     const remainingAmount = car.installment.remainingAmount || 0;
 
     // Contract value includes all payments + penalties (financing charges, taxes, etc.)
-    contractValue = totalPaid + remainingAmount + penaltyFeesTotal;
+    contractValue = totalPaid + remainingAmount;
 
     // Total Sales = (Down + Monthly + Penalties) - Repairs
     // Represents net revenue collected from customer

@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const generalExpenseController = require("../controllers/general-expense-controller");
-const { verifyToken } = require("../middleware/auth");
+const { protect } = require("../controllers/auth-controller");
 
 // All routes require authentication
-router.use(verifyToken);
+router.use(protect);
 
 // Create a new general expense
 // POST /api/general-expenses

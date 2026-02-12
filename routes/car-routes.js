@@ -162,6 +162,14 @@ router.get(
   carController.getInstallmentProfitAnalysis
 );
 
+// Net profit analysis (includes general expenses)
+router.get(
+  "/analysis/profit/net",
+  protect,
+  canViewProfit, // ✅ Admin + Moderator only
+  carController.getNetProfitAnalysis
+);
+
 router.put(
   "/car/:id/owner-book-transfer",
   protect,

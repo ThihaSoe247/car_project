@@ -1986,6 +1986,126 @@ module.exports = {
     }
   },
 
+  // New: Net Profit Analysis (Gross Profit - General Expenses)
+  getNetProfitAnalysis: async (req, res) => {
+    try {
+      const { period } = req.query;
+
+      // Validate period parameter
+      if (!period) {
+        return res.status(400).json({
+          success: false,
+          message: "Period query parameter is required (monthly | 6months | yearly)"
+        });
+      }
+
+      const validPeriods = ["monthly", "6months", "yearly"];
+      if (!validPeriods.includes(period)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid period. Must be one of: monthly, 6months, yearly"
+        });
+      }
+
+      const { startDate, now } = getDateRange(period);
+
+      // Import GeneralExpense model
+      const GeneralExpense = require("../model/GeneralExpense");
+
+      // Get all sold cars (both paid and completed installment) for the period
+      const cars = await Car.find({
+        $or: [
+          {
+            "sale.date": { $gte: startDate, $lte: now },
+            boughtType: "Paid",
+            sale: { $exists: true, $ne: null }
+          },
+          {
+            "ownerBookTransfer.transferDate": { $gte: startDate, $lte: now },
+            boughtType: "Installment",
+            installment: { $exists: true, $ne: null },
+            "installment.remainingAmount": { $lte: 0 },
+            "ownerBookTransfer.transferred": true
+          }
+        ],
+        isAvailable: false
+      });
+
+      // Calculate profit details for all cars
+      const carProfitDetails = cars.map(calculateCarProfitDetails);
+
+      // Separate paid and installment sales
+      const paidSales = carProfitDetails.filter((car) => {
+        const originalCar = cars.find(c => c._id.toString() === car.id);
+        return originalCar?.boughtType === "Paid";
+      });
+
+      const installmentSales = carProfitDetails.filter((car) => {
+        const originalCar = cars.find(c => c._id.toString() === car.id);
+        return originalCar?.boughtType === "Installment";
+      });
+
+      // Calculate totals for paid sales
+      const paidGrossProfit = paidSales.reduce((sum, car) => sum + car.generalProfit, 0);
+
+      // Calculate totals for installment sales
+      const installmentGeneralProfit = installmentSales.reduce((sum, car) => sum + car.generalProfit, 0);
+      const installmentDetailedProfit = installmentSales.reduce((sum, car) => sum + car.detailedProfit, 0);
+      const installmentActualProfit = installmentSales.reduce((sum, car) => sum + (car.actualInstallmentProfit || 0), 0);
+
+      // Total gross profit (from all sales)
+      const totalGrossProfit = paidGrossProfit + installmentDetailedProfit;
+
+      // Get general expenses for the period
+      const generalExpenses = await GeneralExpense.find({
+        expenseDate: { $gte: startDate, $lte: now }
+      }).sort({ expenseDate: -1 });
+
+      const totalGeneralExpenses = generalExpenses.reduce(
+        (sum, expense) => sum + expense.amount,
+        0
+      );
+
+      // Calculate net profit
+      const netProfit = totalGrossProfit - totalGeneralExpenses;
+
+      return res.status(200).json({
+        success: true,
+        period,
+        dateRange: {
+          startDate,
+          endDate: now
+        },
+        summary: {
+          totalGrossProfit,        // Total profit from car sales
+          totalGeneralExpenses,    // Total business expenses
+          netProfit,               // Gross profit - General expenses
+          paidSales: {
+            count: paidSales.length,
+            grossProfit: paidGrossProfit
+          },
+          installmentSales: {
+            count: installmentSales.length,
+            generalProfit: installmentGeneralProfit,
+            detailedProfit: installmentDetailedProfit,
+            actualInstallmentProfit: installmentActualProfit
+          }
+        },
+        carSales: {
+          paid: paidSales,
+          installment: installmentSales
+        },
+        generalExpenses: generalExpenses
+      });
+    } catch (err) {
+      console.error("Error generating net profit analysis:", err);
+      return res.status(500).json({
+        success: false,
+        message: err.message || "Failed to generate net profit report"
+      });
+    }
+  },
+
   // ===== PUBLIC ACCESS METHODS (No Buyer/Sale Data) =====
 
   // Get all cars for public access (no sensitive data)

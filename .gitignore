@@ -108,3 +108,5 @@ tmp/
 temp/
 
 .test/
+
+.docs/

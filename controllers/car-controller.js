@@ -1794,6 +1794,10 @@ const calculateCarProfitDetails = (car) => {
     };
   }
 
+  // Calculate actual installment profit (financing income)
+  // This represents the additional profit from financing (interest, taxes, penalties, etc.)
+  const actualInstallmentProfit = detailedProfit - generalProfit;
+
   // Determine the report date with fallback logic
   // Prefer installment.startDate, but include fallback fields
   const reportDate = soldDate ||
@@ -1818,6 +1822,7 @@ const calculateCarProfitDetails = (car) => {
     reportDate,  // The chosen report date with fallbacks
     generalProfit, // Profit on car itself
     detailedProfit, // Total income including financing (for installment)
+    actualInstallmentProfit, // Additional profit from financing (detailedProfit - generalProfit)
     paymentBreakdown
   };
 };
@@ -1943,6 +1948,9 @@ module.exports = {
       // Calculate total detailed profit (includes financing income, taxes, penalties)
       const totalDetailedProfit = report.reduce((sum, r) => sum + r.detailedProfit, 0);
 
+      // Calculate total actual installment profit (financing income)
+      const totalActualInstallmentProfit = report.reduce((sum, r) => sum + (r.actualInstallmentProfit || 0), 0);
+
       // Calculate total penalty fees collected
       const totalPenaltyFees = report.reduce((sum, r) => sum + (r.paymentBreakdown?.penaltyFeesTotal || 0), 0);
 
@@ -1952,9 +1960,6 @@ module.exports = {
       // Calculate total repair costs
       const totalRepairCosts = report.reduce((sum, r) => sum + (r.totalRepairs || 0), 0);
 
-      // Calculate financing income (difference between detailed and general profit)
-      const financingIncome = totalDetailedProfit - totalGeneralProfit;
-
       // Return response with proper structure
       return res.status(200).json({
         success: true,
@@ -1963,10 +1968,10 @@ module.exports = {
         summary: {
           totalGeneralProfit,    // Profit on the car itself (priceToSell - purchasePrice - repairs)
           totalDetailedProfit,   // Total income including financing (contractValue - purchasePrice - repairs)
+          totalActualInstallmentProfit, // Additional profit from financing (detailedProfit - generalProfit)
           totalSales,            // Net revenue collected from customers (Down + Monthly + Penalties - Repairs)
           totalRepairCosts,      // Total spent on repairs
-          totalPenaltyFees,      // Total penalty fees collected
-          financingIncome        // Extra income from financing (taxes, fees, penalties)
+          totalPenaltyFees       // Total penalty fees collected
         },
         cars: report  // Always return array even if empty
       });

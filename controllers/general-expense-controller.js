@@ -204,15 +204,56 @@ const generalExpenseController = {
 
             // Log results for debugging
             console.log('Found expenses:', expenses.length);
-            if (expenses.length > 0) {
-                console.log('Sample expense dates:', expenses.slice(0, 3).map(e => ({
-                    title: e.title,
-                    expenseDate: e.expenseDate.toISOString()
-                })));
-            }
 
-            // Calculate total
+            // Calculate overall total
             const totalAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+            let groupedData = [];
+
+            if (period === "monthly") {
+                // Group by DAY (YYYY-MM-DD)
+                const dailyGroups = {};
+
+                expenses.forEach(exp => {
+                    const dateKey = exp.expenseDate.toISOString().split('T')[0]; // YYYY-MM-DD
+                    if (!dailyGroups[dateKey]) {
+                        dailyGroups[dateKey] = {
+                            date: dateKey,
+                            expenses: [] // Only details, no summary totals per day
+                        };
+                    }
+                    dailyGroups[dateKey].expenses.push(exp);
+                });
+
+                // Convert object to array and sort by date descending
+                groupedData = Object.values(dailyGroups).sort((a, b) =>
+                    new Date(b.date) - new Date(a.date)
+                );
+
+            } else {
+                // Group by MONTH (YYYY-MM) for 6months and yearly
+                const monthlyGroups = {};
+
+                expenses.forEach(exp => {
+                    const date = new Date(exp.expenseDate);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+
+                    if (!monthlyGroups[monthKey]) {
+                        monthlyGroups[monthKey] = {
+                            month: monthKey,
+                            totalAmount: 0,
+                            count: 0
+                        };
+                    }
+                    monthlyGroups[monthKey].totalAmount += exp.amount;
+                    monthlyGroups[monthKey].count += 1;
+                });
+
+                // Convert object to array and sort by month descending
+                groupedData = Object.values(monthlyGroups).sort((a, b) =>
+                    b.month.localeCompare(a.month)
+                );
+            }
 
             return res.status(200).json({
                 success: true,
@@ -225,7 +266,7 @@ const generalExpenseController = {
                     totalAmount,
                     count: expenses.length,
                 },
-                data: expenses,
+                data: groupedData, // Returns grouped data instead of raw list
             });
         } catch (error) {
             console.error("Error fetching general expenses by period:", error);

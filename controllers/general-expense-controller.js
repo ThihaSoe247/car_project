@@ -230,8 +230,8 @@ const generalExpenseController = {
                     new Date(b.date) - new Date(a.date)
                 );
 
-            } else {
-                // Group by MONTH (YYYY-MM) for 6months and yearly
+            } else if (period === "6months") {
+                // Group by MONTH (YYYY-MM)
                 const monthlyGroups = {};
 
                 expenses.forEach(exp => {
@@ -252,6 +252,28 @@ const generalExpenseController = {
                 // Convert object to array and sort by month descending
                 groupedData = Object.values(monthlyGroups).sort((a, b) =>
                     b.month.localeCompare(a.month)
+                );
+            } else {
+                // Yearly: Group by YEAR (YYYY) - Single summary entry
+                const yearlyGroups = {};
+
+                expenses.forEach(exp => {
+                    const yearKey = exp.expenseDate.getFullYear().toString(); // YYYY
+
+                    if (!yearlyGroups[yearKey]) {
+                        yearlyGroups[yearKey] = {
+                            year: yearKey,
+                            totalAmount: 0,
+                            count: 0
+                        };
+                    }
+                    yearlyGroups[yearKey].totalAmount += exp.amount;
+                    yearlyGroups[yearKey].count += 1;
+                });
+
+                // Convert object to array
+                groupedData = Object.values(yearlyGroups).sort((a, b) =>
+                    b.year.localeCompare(a.year)
                 );
             }
 

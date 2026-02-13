@@ -174,17 +174,42 @@ const generalExpenseController = {
             let startDate;
 
             if (period === "monthly") {
+                // Start of current month
                 startDate = new Date(now.getFullYear(), now.getMonth(), 1);
             } else if (period === "6months") {
+                // Start of 6 months ago
                 startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
             } else if (period === "yearly") {
+                // Start of current year
                 startDate = new Date(now.getFullYear(), 0, 1);
             }
 
+            // Set startDate to beginning of day (00:00:00.000)
+            startDate.setHours(0, 0, 0, 0);
+
+            // Set endDate to end of current day (23:59:59.999)
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            // Log for debugging
+            console.log('=== General Expenses Period Query ===');
+            console.log('Period:', period);
+            console.log('Start Date:', startDate.toISOString());
+            console.log('End Date:', endDate.toISOString());
+
             // Fetch expenses for the period
             const expenses = await GeneralExpense.find({
-                expenseDate: { $gte: startDate, $lte: now },
+                expenseDate: { $gte: startDate, $lte: endDate },
             }).sort({ expenseDate: -1 });
+
+            // Log results for debugging
+            console.log('Found expenses:', expenses.length);
+            if (expenses.length > 0) {
+                console.log('Sample expense dates:', expenses.slice(0, 3).map(e => ({
+                    title: e.title,
+                    expenseDate: e.expenseDate.toISOString()
+                })));
+            }
 
             // Calculate total
             const totalAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -194,7 +219,7 @@ const generalExpenseController = {
                 period,
                 dateRange: {
                     startDate,
-                    endDate: now,
+                    endDate,
                 },
                 summary: {
                     totalAmount,
@@ -356,6 +381,42 @@ const generalExpenseController = {
             return res.status(500).json({
                 success: false,
                 message: "Failed to delete general expense",
+            });
+        }
+    },
+
+    // Diagnostic endpoint to check date storage
+    diagnosticExpenseDates: async (req, res) => {
+        try {
+            // Get a few sample expenses
+            const expenses = await GeneralExpense.find()
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .lean();
+
+            const diagnosticInfo = expenses.map(exp => ({
+                _id: exp._id,
+                title: exp.title,
+                expenseDate: exp.expenseDate,
+                expenseDateType: typeof exp.expenseDate,
+                expenseDateISO: exp.expenseDate instanceof Date ? exp.expenseDate.toISOString() : 'NOT A DATE',
+                createdAt: exp.createdAt,
+                createdAtISO: exp.createdAt instanceof Date ? exp.createdAt.toISOString() : 'NOT A DATE'
+            }));
+
+            return res.status(200).json({
+                success: true,
+                message: "Diagnostic information for expense dates",
+                totalExpenses: await GeneralExpense.countDocuments(),
+                sampleExpenses: diagnosticInfo,
+                currentServerTime: new Date().toISOString(),
+                currentServerTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            });
+        } catch (error) {
+            console.error("Error in diagnostic endpoint:", error);
+            return res.status(500).json({
+                success: false,
+                message: "Failed to run diagnostic",
             });
         }
     },

@@ -30,4 +30,8 @@ router.put("/:id", generalExpenseController.updateGeneralExpense);
 // DELETE /api/general-expenses/:id
 router.delete("/:id", generalExpenseController.deleteGeneralExpense);
 
+// Diagnostic endpoint to check date storage (for debugging)
+// GET /api/general-expenses/diagnostic/dates
+router.get("/diagnostic/dates", generalExpenseController.diagnosticExpenseDates);
+
 module.exports = router;

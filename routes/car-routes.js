@@ -140,7 +140,7 @@ router.get(
   carController.getSoldCarsByInstallment
 );
 
-//Old route for analysis/profit, now it's separated into 2 separated routes
+//Old route for analysis/profit, now it's separated into 2 separated routes, not used
 router.get(
   "/analysis/profit",
   protect,
@@ -162,7 +162,7 @@ router.get(
   carController.getInstallmentProfitAnalysis
 );
 
-// Net profit analysis (includes general expenses)
+// Net profit analysis (includes general expenses), probably not gonna use, because of "/analysis/profit/paid" 
 router.get(
   "/analysis/profit/net",
   protect,

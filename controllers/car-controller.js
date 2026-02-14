@@ -2023,7 +2023,8 @@ module.exports = {
       if (!period) {
         return res.status(400).json({
           success: false,
-          message: "Period query parameter is required (monthly | 6months | yearly)"
+          message:
+            "Period query parameter is required (monthly | 6months | yearly)",
         });
       }
 
@@ -2031,7 +2032,7 @@ module.exports = {
       if (!validPeriods.includes(period)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid period. Must be one of: monthly, 6months, yearly"
+          message: "Invalid period. Must be one of: monthly, 6months, yearly",
         });
       }
 
@@ -2040,96 +2041,149 @@ module.exports = {
       // Import GeneralExpense model
       const GeneralExpense = require("../model/GeneralExpense");
 
-      // Get all sold cars (both paid and completed installment) for the period
+      // 1. Fetch General Expenses
+      const generalExpenses = await GeneralExpense.find({
+        expenseDate: { $gte: startDate, $lte: now },
+      }).lean();
+
+      // 2. Fetch Sold Cars (Paid + Completed Installment)
       const cars = await Car.find({
         $or: [
           {
             "sale.date": { $gte: startDate, $lte: now },
             boughtType: "Paid",
-            sale: { $exists: true, $ne: null }
+            sale: { $exists: true, $ne: null },
           },
           {
             "ownerBookTransfer.transferDate": { $gte: startDate, $lte: now },
             boughtType: "Installment",
             installment: { $exists: true, $ne: null },
             "installment.remainingAmount": { $lte: 0 },
-            "ownerBookTransfer.transferred": true
-          }
+            "ownerBookTransfer.transferred": true,
+          },
         ],
-        isAvailable: false
+        isAvailable: false,
       });
 
-      // Calculate profit details for all cars
-      const carProfitDetails = cars.map(calculateCarProfitDetails);
+      // Initialize aggregation map
+      const groupedData = {};
 
-      // Separate paid and installment sales
-      const paidSales = carProfitDetails.filter((car) => {
-        const originalCar = cars.find(c => c._id.toString() === car.id);
-        return originalCar?.boughtType === "Paid";
+      // Helper to get group key based on period
+      const getGroupKey = (date) => {
+        const d = new Date(date);
+        if (period === "monthly") {
+          // Group by Day: YYYY-MM-DD
+          return d.toISOString().split("T")[0];
+        } else {
+          // Group by Month: YYYY-MM (for 6months and yearly)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}`;
+        }
+      };
+
+      // Helper to initialize group if not exists
+      const initGroup = (key) => {
+        if (!groupedData[key]) {
+          groupedData[key] = {
+            dateKey: key,
+            totalGrossProfit: 0,
+            paidGrossProfit: 0,
+            installmentGeneralProfit: 0, // Using General Profit as requested
+            totalGeneralExpenses: 0,
+            netProfit: 0,
+            salesCount: 0,
+            expensesCount: 0,
+          };
+        }
+      };
+
+      // 3. Process General Expenses
+      let totalGeneralExpenses = 0;
+      generalExpenses.forEach((exp) => {
+        const key = getGroupKey(exp.expenseDate);
+        initGroup(key);
+        groupedData[key].totalGeneralExpenses += exp.amount || 0;
+        groupedData[key].expensesCount += 1;
+        totalGeneralExpenses += exp.amount || 0;
       });
 
-      const installmentSales = carProfitDetails.filter((car) => {
-        const originalCar = cars.find(c => c._id.toString() === car.id);
-        return originalCar?.boughtType === "Installment";
+      // 4. Process Cars
+      // Calculate profit details for all cars using calculateCarProfit (General Profit only)
+      const carProfitReports = cars.map(calculateCarProfit);
+
+      let paidGrossProfit = 0;
+      let installmentGeneralProfit = 0;
+
+      carProfitReports.forEach((report) => {
+        // Find original car to get the correct date for grouping
+        // Note: calculateCarProfit returns an object extending the car somewhat but we need the original for type check and strict date logic
+        // Actually, report already has soldOutDate which handles the fallbacks, but let's stick to original car logic for 100% safety on type
+        const originalCar = cars.find((c) => c._id.toString() === report.id || c.licenseNo === report.licenseNo);
+        if (!originalCar) return;
+
+        let dateForGrouping;
+        if (originalCar.boughtType === "Paid") {
+          dateForGrouping = originalCar.sale.date;
+        } else {
+          // For completed installments, use transfer date
+          dateForGrouping = originalCar.ownerBookTransfer.transferDate;
+        }
+
+        const key = getGroupKey(dateForGrouping);
+        initGroup(key);
+
+        // Add profits
+        // ✅ Use calculateCarProfit result (.profit) which is strictly General Profit
+        if (originalCar.boughtType === "Paid") {
+          groupedData[key].paidGrossProfit += report.profit;
+          paidGrossProfit += report.profit;
+        } else {
+          // Installment general profit
+          groupedData[key].installmentGeneralProfit += report.profit;
+          installmentGeneralProfit += report.profit;
+        }
+
+        groupedData[key].salesCount += 1;
       });
 
-      // Calculate totals for paid sales
-      const paidGrossProfit = paidSales.reduce((sum, car) => sum + car.generalProfit, 0);
-
-      // Calculate totals for installment sales
-      const installmentGeneralProfit = installmentSales.reduce((sum, car) => sum + car.generalProfit, 0);
-      const installmentDetailedProfit = installmentSales.reduce((sum, car) => sum + car.detailedProfit, 0);
-      const installmentActualProfit = installmentSales.reduce((sum, car) => sum + (car.actualInstallmentProfit || 0), 0);
-
-      // Total gross profit (from all sales)
-      const totalGrossProfit = paidGrossProfit + installmentDetailedProfit;
-
-      // Get general expenses for the period
-      const generalExpenses = await GeneralExpense.find({
-        expenseDate: { $gte: startDate, $lte: now }
-      }).sort({ expenseDate: -1 });
-
-      const totalGeneralExpenses = generalExpenses.reduce(
-        (sum, expense) => sum + expense.amount,
-        0
-      );
-
-      // Calculate net profit
+      // 5. Calculate Aggregates
+      const totalGrossProfit = paidGrossProfit + installmentGeneralProfit;
       const netProfit = totalGrossProfit - totalGeneralExpenses;
+
+      // Finish grouping calculations
+      const breakdown = Object.values(groupedData).map((group) => {
+        group.totalGrossProfit =
+          group.paidGrossProfit + group.installmentGeneralProfit;
+        group.netProfit = group.totalGrossProfit - group.totalGeneralExpenses;
+        return group;
+      });
+
+      // Sort breakdown descending (newest first)
+      breakdown.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 
       return res.status(200).json({
         success: true,
         period,
         dateRange: {
           startDate,
-          endDate: now
+          endDate: now,
         },
         summary: {
-          totalGrossProfit,        // Total profit from car sales
-          totalGeneralExpenses,    // Total business expenses
-          netProfit,               // Gross profit - General expenses
-          paidSales: {
-            count: paidSales.length,
-            grossProfit: paidGrossProfit
-          },
-          installmentSales: {
-            count: installmentSales.length,
-            generalProfit: installmentGeneralProfit,
-            detailedProfit: installmentDetailedProfit,
-            actualInstallmentProfit: installmentActualProfit
-          }
+          totalGrossProfit,        // Combined General Profit (Paid + Installment)
+          paidGrossProfit,
+          installmentGeneralProfit,
+          totalGeneralExpenses,
+          netProfit,               // Gross - Expenses
         },
-        carSales: {
-          paid: paidSales,
-          installment: installmentSales
-        },
-        generalExpenses: generalExpenses
+        breakdown,
       });
     } catch (err) {
       console.error("Error generating net profit analysis:", err);
       return res.status(500).json({
         success: false,
-        message: err.message || "Failed to generate net profit report"
+        message: err.message || "Failed to generate net profit report",
       });
     }
   },

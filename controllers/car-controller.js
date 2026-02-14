@@ -23,6 +23,34 @@ const sanitizeId = (id) => {
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
+// Helper function to calculate date range based on period
+const getDateRange = (period) => {
+  const now = new Date();
+  let startDate;
+
+  if (period === "monthly") {
+    // Start of current month
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period === "6months") {
+    // Start of 5 months ago (total 6 months window including current)
+    startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  } else if (period === "yearly") {
+    // Start of current year
+    startDate = new Date(now.getFullYear(), 0, 1);
+  } else {
+    throw new Error("Invalid period");
+  }
+
+  // Set startDate to beginning of day (00:00:00.000)
+  startDate.setHours(0, 0, 0, 0);
+
+  // Set endDate to end of current day (23:59:59.999)
+  const endDate = new Date(now);
+  endDate.setHours(23, 59, 59, 999);
+
+  return { startDate, now: endDate };
+};
+
 const carController = {
   createCar: async (req, res) => {
     try {
@@ -1663,22 +1691,7 @@ const carController = {
 };
 
 // Helper function to get date range based on period
-const getDateRange = (period) => {
-  const now = new Date();
-  let startDate;
 
-  if (period === "monthly") {
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  } else if (period === "6months") {
-    startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-  } else if (period === "yearly") {
-    startDate = new Date(now.getFullYear(), 0, 1);
-  } else {
-    throw new Error("Invalid period");
-  }
-
-  return { startDate, now };
-};
 
 // Helper function to calculate profit for a car (General Profit)
 const calculateCarProfit = (car) => {
@@ -1884,13 +1897,28 @@ module.exports = {
         sale: { $exists: true, $ne: null }
       });
 
+      // Get general expenses for the period
+      const GeneralExpense = require("../model/GeneralExpense");
+      const generalExpenses = await GeneralExpense.find({
+        expenseDate: { $gte: startDate, $lte: now }
+      }).sort({ expenseDate: -1 });
+
+      const totalGeneralExpenses = generalExpenses.reduce(
+        (sum, expense) => sum + (expense.amount || 0),
+        0
+      );
+
       const report = cars.map(calculateCarProfit);
       const totalProfit = report.reduce((sum, r) => sum + r.profit, 0);
+      const netProfit = totalProfit - totalGeneralExpenses;
 
       res.json({
         success: true,
         totalProfit,
+        totalGeneralExpenses,
+        netProfit,
         cars: report,
+        // generalExpenses, // Uncomment if user wants the list of expenses
         reportType: "paid",
         count: report.length
       });

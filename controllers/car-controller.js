@@ -2111,38 +2111,37 @@ module.exports = {
 
       // 4. Process Cars
       // Calculate profit details for all cars using calculateCarProfit (General Profit only)
-      const carProfitReports = cars.map(calculateCarProfit);
-
       let paidGrossProfit = 0;
       let installmentGeneralProfit = 0;
 
-      carProfitReports.forEach((report) => {
-        // Find original car to get the correct date for grouping
-        // Note: calculateCarProfit returns an object extending the car somewhat but we need the original for type check and strict date logic
-        // Actually, report already has soldOutDate which handles the fallbacks, but let's stick to original car logic for 100% safety on type
-        const originalCar = cars.find((c) => c._id.toString() === report.id || c.licenseNo === report.licenseNo);
-        if (!originalCar) return;
+      cars.forEach((car) => {
+        // Calculate profit for this specific car
+        const profitReport = calculateCarProfit(car);
 
+        // Determine date for grouping
         let dateForGrouping;
-        if (originalCar.boughtType === "Paid") {
-          dateForGrouping = originalCar.sale.date;
+        if (car.boughtType === "Paid") {
+          dateForGrouping = car.sale?.date;
         } else {
           // For completed installments, use transfer date
-          dateForGrouping = originalCar.ownerBookTransfer.transferDate;
+          dateForGrouping = car.ownerBookTransfer?.transferDate;
         }
+
+        // Skip if no valid date found (data consistency check)
+        if (!dateForGrouping) return;
 
         const key = getGroupKey(dateForGrouping);
         initGroup(key);
 
         // Add profits
         // ✅ Use calculateCarProfit result (.profit) which is strictly General Profit
-        if (originalCar.boughtType === "Paid") {
-          groupedData[key].paidGrossProfit += report.profit;
-          paidGrossProfit += report.profit;
+        if (car.boughtType === "Paid") {
+          groupedData[key].paidGrossProfit += profitReport.profit;
+          paidGrossProfit += profitReport.profit;
         } else {
           // Installment general profit
-          groupedData[key].installmentGeneralProfit += report.profit;
-          installmentGeneralProfit += report.profit;
+          groupedData[key].installmentGeneralProfit += profitReport.profit;
+          installmentGeneralProfit += profitReport.profit;
         }
 
         groupedData[key].salesCount += 1;

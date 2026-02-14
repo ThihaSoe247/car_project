@@ -180,8 +180,8 @@ const generalExpenseController = {
                 // Start of 6 months ago
                 startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
             } else if (period === "yearly") {
-                // Start of current year
-                startDate = new Date(now.getFullYear(), 0, 1);
+                // Start of 5 years ago (to show history)
+                startDate = new Date(now.getFullYear() - 5, 0, 1);
             }
 
             // Set startDate to beginning of day (00:00:00.000)
